@@ -1,0 +1,50 @@
+
+========播放器的架构========
+
+一.main 主线程中 --------线程 1 主线程
+  1.判断url的合法性
+  2.创建win 和renderer
+
+二.调用stream_open()函数
+  1.创建is结构体
+  2.创建video，audio，frame 队列 
+  3.创建线程“read_thread()”读包队列------线程2
+
+三.在读包线程中
+  1.打开多媒体 avformat_open_input() 
+  2.for循环读取音视频包保存到，视频包队列，和音频包队列中
+  3.调用 audio_open() 设置音频的播放的参数，和会调函数 sdl_audio_callback ----线程3
+    系统创建一个线程，读队列中的数据给声卡，解码decode，解码后就直接播放
+  4.调用 decode_thread () 创建视频解码线程，读取包解码decode,把解码到到Frame插入到Frame队列中，等待显示  ---线程4
+
+四.音视频同步 ---线程1中 主线程
+
+五.PTS的计算
+   1.AVPacket 中的 PTS 是一定有的
+   2.AVFrame 解码后PTS如果为“0”没有PTS时，要推算
+   3.使用av_frame_get_best_effort_timestamp() 推算AVFrame的PTS
+   4. PTS   =    PTS * av_q2s(video_steame->time_base), 
+       ｜         ｜
+      单位s     总的刻度
+   
+     时间(s) =  总的刻度 x (1/刻度数)(s)
+   5.video_clock = 当前帧的PTS  +  △t  视频的clock
+                                  ｜
+                                 1/tbr (frame_delay)
+   6.audio_clock = current_pts 当前音频播放的时间戳
+
+六.音视频同步
+                     audio_clock (音频时间,主时间轴,当前音频播放的位置)
+                          |
+                          |
+   1.     video_clock --> |                  （在主时间轴 之前，马上播放）
+   2.                     | <--video_clock   （在主时间轴 之后，需等待音频）
+                          |
+                       主时间轴 
+
+         
+
+
+
+
+    
