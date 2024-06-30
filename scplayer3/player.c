@@ -697,6 +697,9 @@ void video_refresh_timer(void *userdata) {
            vp->pts - ref_clock               vp->pts - is->frame_last_pts
                   |                                  |
                 diff                               delay
+            ---------------- 0 ---------------> x
+              -3      -1           1       3
+             diff   delay        delay   diff
            */
         sync_threshold = (delay > AV_SYNC_THRESHOLD) ? delay : AV_SYNC_THRESHOLD;// 如果delay > 0.01 ? delay : 0.01
         if(fabs(diff) < AV_NOSYNC_THRESHOLD) {//如果diff绝对值 10 ms 小于这阀值说明音视频是同步的
