@@ -641,7 +641,11 @@ void video_refresh_timer(void *userdata) {
   
   if(is->video_st) {
     if(is->pictq.size == 0) {
-      schedule_refresh(is, 1); //if the queue is empty, so we shoud be as fast as checking queue of picture
+      /*
+      if the queue is empty, so we shoud be as fast as checking queue of picture
+      如果视频queue是空的，延时1毫秒 快速的检测
+       */
+      schedule_refresh(is, 1); 
     } else {
       /* Now, normally here goes a ton of code
 	       about timing, etc. we're just going to
@@ -649,34 +653,53 @@ void video_refresh_timer(void *userdata) {
 	       increase and decrease this value and hard code
 	       the timing - but I don't suggest that ;)
 	       We'll learn how to do it for real later.
+         这里会有成顿的代码来，表示时间，看看是怎么做的
       */
-      vp = frame_queue_peek(&is->pictq);
-      is->video_current_pts = vp->pts;
-      is->video_current_pts_time = av_gettime();
-      if(is->frame_last_pts == 0) {
+      vp = frame_queue_peek(&is->pictq);//队列中取到要渲染的frame
+      is->video_current_pts = vp->pts;//对is的域赋值，当前video的pts
+      is->video_current_pts_time = av_gettime();//系统时间
+      if(is->frame_last_pts == 0) {//一步是开始时 frame_last_pts 是为 0
         delay = 0;
       }else {
-        delay = vp->pts - is->frame_last_pts; /* the pts from last time */
+         /* the pts from last time，
+         当前的pts - 上一帧的pts，判断过ms后播放现在的这一视频帧 */
+        delay = vp->pts - is->frame_last_pts;
       }
       
+       /* 
+       if incorrect delay, use previous one 
+       如果 delay 的时间是<= 0 马上播放，如果
+       dele >= 1s ，1s后播放，1s播放1帧这个不合理，我们就用上一次的delay
+       */
       if(delay <= 0 || delay >= 1.0) {
-        /* if incorrect delay, use previous one */
         delay = is->frame_last_delay;
       }
 
-      /* save for next time */
+      /* save for next time 
+        这一就要展示了
+        保存一下最后一次的delay 时间 和pts
+        给上面计算 delay 使用
+      */
       is->frame_last_delay = delay;
       is->frame_last_pts = vp->pts;
 
       /* update delay to sync to audio if not master source */
-      if(is->av_sync_type != AV_SYNC_VIDEO_MASTER) {
-        ref_clock = get_master_clock(is);
-        diff = vp->pts - ref_clock;
+      if(is->av_sync_type != AV_SYNC_VIDEO_MASTER) {//视频同步到音频的模式
+        ref_clock = get_master_clock(is);//音频audio_clock的时间
+        diff = vp->pts - ref_clock;//视频时间 - 音频audio_clock的时间
 
         /* Skip or repeat the frame. Take delay into account
-          FFPlay still doesn't "know if this is the best guess." */
-        sync_threshold = (delay > AV_SYNC_THRESHOLD) ? delay : AV_SYNC_THRESHOLD;
-        if(fabs(diff) < AV_NOSYNC_THRESHOLD) {
+          FFPlay still doesn't "know if this is the best guess."
+          sync_threshold 视频当前帧和下一帧的时间比较
+          diff           是视频时间和音频时间比较
+          
+          （视频时间 - 音频audio_clock的时间）  当前的pts - 上一帧的pts，
+           vp->pts - ref_clock               vp->pts - is->frame_last_pts
+                  |                                  |
+                diff                               delay
+           */
+        sync_threshold = (delay > AV_SYNC_THRESHOLD) ? delay : AV_SYNC_THRESHOLD;// 如果delay > 0.01 ? delay : 0.01
+        if(fabs(diff) < AV_NOSYNC_THRESHOLD) {//如果diff绝对值 10 ms 小于这阀值说明音视频是同步的
           if(diff <= -sync_threshold) {
             delay = 0;
           } else if(diff >= sync_threshold) {
