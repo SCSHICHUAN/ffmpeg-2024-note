@@ -85,9 +85,9 @@ typedef struct VideoState {
   AVStream        *audio_st;
   AVCodecContext  *audio_ctx;
   PacketQueue     audioq;
-  uint8_t         *audio_buf;
-  unsigned int    audio_buf_size;
-  unsigned int    audio_buf_index;
+  uint8_t         *audio_buf;      // 解码后到音频数据
+  unsigned int    audio_buf_size;  // 数据包的大小
+  unsigned int    audio_buf_index; // 游标
   AVFrame         audio_frame;
   AVPacket        audio_pkt;
   uint8_t         *audio_pkt_data;
@@ -332,15 +332,15 @@ double get_audio_clock(VideoState *is) {
   double pts;
   int hw_buf_size, bytes_per_sec, n;
   
-  pts = is->audio_clock; /* maintained in the audio thread */
-  hw_buf_size = is->audio_buf_size - is->audio_buf_index;
+  pts = is->audio_clock; /* maintained in the audio thread 在音频线程中维护*/
+  hw_buf_size = is->audio_buf_size - is->audio_buf_index;// 当前缓冲区数据还剩余的
   bytes_per_sec = 0;
-  n = is->audio_ctx->ch_layout.nb_channels * 2;
+  n = is->audio_ctx->ch_layout.nb_channels * 2;//每个音频样本占用2个字节（通常是16位，等于2字节）。
   if(is->audio_st) {
-    bytes_per_sec = is->audio_ctx->sample_rate * n;
+    bytes_per_sec = is->audio_ctx->sample_rate * n;//44100 * 4;采样率 x 字节数 = 每秒的字节数
   }
   if(bytes_per_sec) {
-    pts -= (double)hw_buf_size / bytes_per_sec;
+    pts -= (double)hw_buf_size / bytes_per_sec;//时间pts = 缓冲的bytes/(每秒多少bytes)
   }
   return pts;
 }
@@ -496,7 +496,8 @@ int audio_decode_frame(VideoState *is) {
       }
 
       if (!isnan(is->audio_frame.pts))
-        is->audio_clock = is->audio_frame.pts + (double) is->audio_frame.nb_samples / is->audio_frame.sample_rate;
+        is->audio_clock = is->audio_frame.pts + (double) is->audio_frame.nb_samples / is->audio_frame.sample_rate,
+        printf("audio_clock= %.4f\n",is->audio_clock);
       else
         is->audio_clock = NAN;
       //release pkt
@@ -664,6 +665,7 @@ void video_refresh_timer(void *userdata) {
          /* the pts from last time，
          当前的pts - 上一帧的pts，判断过ms后播放现在的这一视频帧 */
         delay = vp->pts - is->frame_last_pts;
+        printf("video_pts-last_pts=%.4f ",delay);
       }
       
        /* 
@@ -687,6 +689,7 @@ void video_refresh_timer(void *userdata) {
       if(is->av_sync_type != AV_SYNC_VIDEO_MASTER) {//视频同步到音频的模式
         ref_clock = get_master_clock(is);//音频audio_clock的时间
         diff = vp->pts - ref_clock;//视频时间 - 音频audio_clock的时间
+        printf("diff=%.4f ",diff);
 
         /* Skip or repeat the frame. Take delay into account
           FFPlay still doesn't "know if this is the best guess."
@@ -700,28 +703,36 @@ void video_refresh_timer(void *userdata) {
             ---------------- 0 ---------------> x
               -3      -1           1       3
              diff   delay        delay   diff
+
+             以diff为准来修正delay
            */
         sync_threshold = (delay > AV_SYNC_THRESHOLD) ? delay : AV_SYNC_THRESHOLD;// 如果delay > 0.01 ? delay : 0.01
         if(fabs(diff) < AV_NOSYNC_THRESHOLD) {//如果diff绝对值 10 ms 小于这阀值说明音视频是同步的
-          if(diff <= -sync_threshold) {
+         printf("fabs(diff)=%.4f ",fabs(diff));
+          if(diff <= -sync_threshold) {//视频时间远远在前，视频要展示
             delay = 0;
-          } else if(diff >= sync_threshold) {
+          } else if(diff >= sync_threshold) {//视频是在后 ，并且delay 不够要修正
             delay = 2 * delay;
           }
         }
       }
 
+      printf("delay=%.4f ",delay);
+
       is->frame_timer += delay;
       /* computer the REAL delay */
-      actual_delay = is->frame_timer - (av_gettime() / 1000000.0);
+      actual_delay = is->frame_timer - (av_gettime() / 1000000.0);//为什么要减因为开始时 is->frame_timer是等于系统时间的
       if(actual_delay < 0.010) {
         /* Really it should skip the picture instead */
         actual_delay = 0.010;
       }
 
       schedule_refresh(is, (int)(actual_delay * 1000 + 0.5));
-      
-      /* show the picture! */
+      printf("schedule_refresh_time= %dms\n",(int)(actual_delay * 1000 + 0.5));
+      /* show the picture!
+        展示当前帧
+        上面的是计算下一帧展示时间准备的
+       */
       video_display(is);
     }
   } else {
