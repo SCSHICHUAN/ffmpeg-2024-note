@@ -63,25 +63,54 @@ typedef struct _PacketQueue
 
 typedef struct _VideoState
 {
+    //文件头信息
+    char *filename;
+    AVFormatContext *ic;
+
+    //音视频同步相关
+    int av_sync_type;
+
+    double audio_clock;//音频时钟
+    double frame_timer;//已经播放完成的视频的时间
+    double frame_last_pts;//视频最后一次的pts
+    double frame_last_delay;//视频最后一次的delay
+
+    double video_clock;//视频时间，最后的frame的pts+推算的下一帧的pts
+    double video_current_pts;
+    double video_current_pts_time;
+
     // 音频
-    AVCodecContext *aCtx;
-    AVPacket *aPkt;
-    AVFrame *aFrame;
-
-    struct SwrContext *swr_ctx;
-
-    uint8_t *audio_buf;  // 解码后到音频数据
-    uint audio_buf_size; // 数据包的大小
-    int audio_buf_index; // 游标
-
-    PacketQueue audioq;
+    int             audio_index;//音频流的index
+    AVStream        *audio_st;//音频流
+    AVCodecContext  *audio_ctx;//音频的解码环境
+    PacketQueue     audioq;//音频的队列
+    uint8_t         *audio_buf;      // 解码后到音频数据
+    unsigned int    audio_buf_size;  // 数据包的大小
+    unsigned int    audio_buf_index; // 游标
+    AVFrame         audio_frame;//音频的frame
+    AVPacket        audio_pkt;//音频包
+    uint8_t         *audio_pkt_data;//音频原始数据
+    int             audio_pkt_size;
+    struct SwrContext *audio_swr_ctx;//音频重采样
 
     // 视频
-    AVCodecContext *vCtx;
-    AVPacket *vPkt;
-    AVFrame *vFrame;
+    int             video_index;//视频流的index
+    AVStream        *video_st;//视频流
+    AVCodecContext  *video_ctx;//视频的解码环境
+    PacketQueue     videoq;//视频包的queue
+    AVPacket        video_pkt;//视频pkt
+    struct SwsContext *sws_ctx;//视频重采样
 
-    SDL_Texture *texture;
+    SDL_Texture     *texture;
+
+    FrameQueue      pictq;
+
+    int width, height, xleft, ytop;
+  
+    SDL_Thread      *read_tid;
+    SDL_Thread      *decode_tid;
+
+    int             quit;
 } VideoState;
 
 /*
@@ -770,6 +799,14 @@ __END:
 
     return ret;
 }
+
+int main(int argc, char *argv[]){
+
+}
+
+
+
+
 /*
 
 “.”和“->”的区别

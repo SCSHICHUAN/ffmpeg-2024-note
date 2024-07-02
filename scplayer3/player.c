@@ -9,7 +9,7 @@
 #include <libswresample/swresample.h>
 
 #define MAX_QUEUE_SIZE (5 * 1024 * 1024)
-#define SDL_AUDIO_BUFFER_SIZE 1024
+#define SDL_AUDIO_BUFFER_SIZE 1024 * 2
 
 #define FF_REFRESH_EVENT (SDL_USEREVENT)
 #define FF_QUIT_EVENT (SDL_USEREVENT + 1)
@@ -434,6 +434,7 @@ int audio_decode_frame(VideoState *is) {
      //从队列中读取数据
     if(packet_queue_get(&is->audioq, &is->audio_pkt, 0) <= 0) {
       av_log(NULL, AV_LOG_ERROR, "Could not get packet from audio queue!\n");
+      is->quit = 1;
       break;
     }
 
@@ -446,6 +447,11 @@ int audio_decode_frame(VideoState *is) {
   
     while(ret >= 0) {
       ret = avcodec_receive_frame(is->audio_ctx, &is->audio_frame);
+      double pts_in_seconds = is->audio_frame.pts * av_q2d(is->audio_st->time_base);
+      // printf("audio_frame pts = %lld %.2fs num/den=%d/%d \n",
+      // is->audio_frame.pts,pts_in_seconds,is->audio_st->time_base.num,is->audio_st->time_base.den);
+
+
       if(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF){
         break;
       } else if( ret < 0) {
@@ -496,13 +502,15 @@ int audio_decode_frame(VideoState *is) {
       }
 
       if (!isnan(is->audio_frame.pts))
-        is->audio_clock = is->audio_frame.pts + (double) is->audio_frame.nb_samples / is->audio_frame.sample_rate,
-        printf("audio_clock= %.4f\n",is->audio_clock);
+        is->audio_clock = is->audio_frame.pts * av_q2d(is->audio_st->time_base) + is->audio_frame.nb_samples / is->audio_frame.sample_rate;
       else
         is->audio_clock = NAN;
-      //release pkt
-      av_frame_unref(&is->audio_frame);
+      
+      // printf("audio_clock=%.f pkt=%.f  pts=%lld nb_samples=%d sample_rate=%d \n",
+      //   is->audio_clock,is->audio_clock/1024,is->audio_frame.pts,is->audio_frame.nb_samples,is->audio_frame.sample_rate);
 
+      //release pkt
+      av_frame_unref(&is->audio_frame);  
       return data_size;
     }
   }
@@ -665,7 +673,7 @@ void video_refresh_timer(void *userdata) {
          /* the pts from last time，
          当前的pts - 上一帧的pts，判断过ms后播放现在的这一视频帧 */
         delay = vp->pts - is->frame_last_pts;
-        printf("video_pts-last_pts=%.4f ",delay);
+        // printf("video_pts-last_pts=%.4f ",delay);
       }
       
        /* 
@@ -689,7 +697,7 @@ void video_refresh_timer(void *userdata) {
       if(is->av_sync_type != AV_SYNC_VIDEO_MASTER) {//视频同步到音频的模式
         ref_clock = get_master_clock(is);//音频audio_clock的时间
         diff = vp->pts - ref_clock;//视频时间 - 音频audio_clock的时间
-        printf("diff=%.4f ",diff);
+        // printf("diff=%.4f ",diff);
 
         /* Skip or repeat the frame. Take delay into account
           FFPlay still doesn't "know if this is the best guess."
@@ -717,7 +725,7 @@ void video_refresh_timer(void *userdata) {
         }
       }
 
-      printf("delay=%.4f ",delay);
+      // printf("delay=%.4f ",delay);
 
       is->frame_timer += delay;
       /* computer the REAL delay */
