@@ -31,6 +31,22 @@ Create by stan 2024-6-30
 
 #define AUDIO_BUFFER_SIZE 1024
 
+#define VIDEO_PICTURE_QUEUE_SIZE 3
+#define SAMPLE_QUEUE_SIZE 9
+#define FRAME_QUEUE_SIZE FFMAX(SAMPLE_QUEUE_SIZE, VIDEO_PICTURE_QUEUE_SIZE)
+
+static const char *input_filename;
+static const char *window_title;
+
+static int default_width = 640;
+static int default_height = 480;
+static int screen_width  = 0;
+static int screen_height = 0;
+
+static SDL_Window      *win;
+static SDL_Renderer    *renderer;
+
+
 enum {
   AV_SYNC_AUDIO_MASTER,
   AV_SYNC_VIDEO_MASTER,
@@ -44,12 +60,12 @@ static int w_height = 480;
 static SDL_Window *win = NULL;
 static SDL_Renderer *renderer = NULL;
 
-typedef struct _MyPacketEle
+typedef struct MyPacketEle
 {
     AVPacket *pkt;
 } MyPacketEle;
 
-typedef struct _PacketQueue
+typedef struct PacketQueue
 {
     AVFifo *pkts;     // 储存元素
     int nb_packets;   // 元素的个数
@@ -61,8 +77,29 @@ typedef struct _PacketQueue
 
 } PacketQueue;
 
-typedef struct _VideoState
-{
+typedef struct Fram{
+    AVFrame *frame;  //存储解码后的视频帧
+    double pts;      //帧的呈现时刻
+    double duration; //帧的持续时间
+    int64_t pos;     //在pkt中的位置
+    int width;       //帧的宽
+    int height;      //帧的高
+    int format;      //像素格式
+    AVRational sar;  //time base
+}Frame;
+
+typedef struct FrameQueue{
+    Frame queue[FRAME_QUEUE_SIZE];//帧数组
+    int  rindex;                  //读帧索引
+    int  windex;                  //写帧索引
+    int  size;                    //整个队列的大小
+    int  abort;                   //队列终止标志
+    SDL_mutex *mutex; //互斥
+    SDL_cond  *cond;  //同步
+}FrameQueue;
+
+
+typedef struct VideoState{
     //文件头信息
     char *filename;
     AVFormatContext *ic;
@@ -70,51 +107,48 @@ typedef struct _VideoState
     //音视频同步相关
     int av_sync_type;
 
-    double audio_clock;//音频时钟
-    double frame_timer;//已经播放完成的视频的时间
-    double frame_last_pts;//视频最后一次的pts
-    double frame_last_delay;//视频最后一次的delay
+    double          audio_clock;     //音频pts
+    double          frame_timer;     //已经播放完成的视频的时间
+    double          frame_last_pts;  //视频最后一次的pts
+    double          frame_last_delay;//视频最后一次的delay
 
-    double video_clock;//视频时间，最后的frame的pts+推算的下一帧的pts
-    double video_current_pts;
-    double video_current_pts_time;
+    double          video_clock;//预测视频帧的pts 视频时间，最后的frame的pts+推算的下一帧的pts
+    double          video_current_pts;     //当前播报视频帧的pts
+    double          video_current_pts_time;//当前播报视频帧的pts单位秒
 
     // 音频
-    int             audio_index;//音频流的index
-    AVStream        *audio_st;//音频流
-    AVCodecContext  *audio_ctx;//音频的解码环境
-    PacketQueue     audioq;//音频的队列
+    int             audio_index;     //音频流的index
+    AVStream        *audio_st;       //音频流
+    AVCodecContext  *audio_ctx;      //音频的解码环境
+    PacketQueue     audioq;          //音频的队列
     uint8_t         *audio_buf;      // 解码后到音频数据
     unsigned int    audio_buf_size;  // 数据包的大小
     unsigned int    audio_buf_index; // 游标
-    AVFrame         audio_frame;//音频的frame
-    AVPacket        audio_pkt;//音频包
-    uint8_t         *audio_pkt_data;//音频原始数据
+    AVFrame         audio_frame;     //音频的frame
+    AVPacket        audio_pkt;       //音频包
+    uint8_t         *audio_pkt_data; //音频原始数据
     int             audio_pkt_size;
-    struct SwrContext *audio_swr_ctx;//音频重采样
+    struct SwrContext *audio_swr_ctx; //音频重采样
 
     // 视频
-    int             video_index;//视频流的index
-    AVStream        *video_st;//视频流
-    AVCodecContext  *video_ctx;//视频的解码环境
-    PacketQueue     videoq;//视频包的queue
-    AVPacket        video_pkt;//视频pkt
-    struct SwsContext *sws_ctx;//视频重采样
-
-    SDL_Texture     *texture;
-
-    FrameQueue      pictq;
-
+    int             video_index; //视频流的index
+    AVStream        *video_st;  //视频流
+    AVCodecContext  *video_ctx; //视频的解码环境
+    PacketQueue     videoq;     //视频包的queue
+    AVPacket        video_pkt;  //视频pkt
+    struct SwsContext *sws_ctx; //视频重采样
+    SDL_Texture     *texture;   //纹理
+    FrameQueue      pictq;      //储存解码后的视频帧 
     int width, height, xleft, ytop;
   
-    SDL_Thread      *read_tid;
-    SDL_Thread      *decode_tid;
-
+    //线程和退出
+    SDL_Thread      *read_tid;  //读取数据线程
+    SDL_Thread      *decode_tid;//解码线程
     int             quit;
-} VideoState;
+}VideoState;
 
 /*
-  自定义queue
+  自定义pkt queue
  */
 // 初始化队列
 static int packet_queue_init(PacketQueue *q)
@@ -137,6 +171,7 @@ static int packet_queue_init(PacketQueue *q)
     {
         return AVERROR(ENOMEM);
     }
+    return 0;
 }
 
 // put 私有的方法
@@ -248,16 +283,132 @@ static void packet_queue_destory(PacketQueue *q)
     SDL_DestroyCond(q->cond);
 }
 
+/*
+  自定义Frame queue
+  生产线程 decode 线程、
+  消费线程是 渲染线程
+ */
+//初始化Frame queue
+static int frame_queue_init(FrameQueue *fq,int max_size){
+    int i;
+    memset(fq,0,sizeof(FrameQueue));//所有字节设置为 0
+    /*
+     初始化线程标志
+     */
+    if(!(fq->mutex = SDL_CreateMutex())){
+        av_log(NULL,AV_LOG_FATAL,"SDL_CreateMutex(): %s\n",SDL_GetError());
+        return AVERROR(ENOMEM);
+    }
+    if(!(fq->cond = SDL_CreateCond())){
+        av_log(NULL,AV_LOG_FATAL,"SDL_CreateCond(): %s\n",SDL_GetError());
+        return AVERROR(ENOMEM);
+    }
+    /*
+    初始化数组
+    */
+   for(i = 0; i < VIDEO_PICTURE_QUEUE_SIZE; i++)
+       if(!(fq->queue[i].frame = av_frame_alloc()))
+           return AVERROR(ENOMEM);
+
+    return 0;       
+}
+//销毁Frame queue
+static void frame_queue_destory(FrameQueue *fq){
+    int i;
+    for(int i = 0; i < VIDEO_PICTURE_QUEUE_SIZE; i++){
+        Frame *vp = &fq->queue[i];
+        //释放 AVFrame 结构中引用的所有数据（如内部缓冲区）
+        av_frame_unref(vp->frame);
+        /*
+        释放 AVFrame 结构本身的内存，
+        还会将 vp->frame 指针设置为 NULL，表示这个 AVFrame 已经被释放且不可再使用。
+        */
+       av_frame_free(&vp->frame);
+       //销毁现在变量标志
+       SDL_DestroyMutex(fq->mutex);
+       SDL_DestroyCond(fq->cond);
+    }
+        
+}
+//帧队列终止
+static void frame_queue_abort(FrameQueue *fq){
+    SDL_LockMutex(fq->mutex);
+    fq->abort = 1;
+    SDL_CondSignal(fq->cond);
+    SDL_UnlockMutex(fq->mutex);
+}
+//唤醒等待的线程
+static void frame_queue_signal(FrameQueue *fq){
+    /*
+    唤醒等待在条件变量 fq->cond 上的一个线程。
+    如果有多个线程在等待这个条件变量，那么只有一个线程会被唤醒。
+    */
+    SDL_LockMutex(fq->mutex);
+    SDL_CondSignal(fq->cond);
+    SDL_UnlockMutex(fq->mutex);
+}
+
+/*
+  解码线程调用
+*/
+//fq_1.获取当前写视频帧位置0，当前可储存AVFrame 的Frame
+static Frame *frame_queue_peek_writable(FrameQueue *fq){
+    SDL_LockMutex(fq->mutex);
+    /*
+    生产没有消费完，等待消费，Frame queue没有处理消费，
+    因为一般在播放器中，生产>消费，不用担心消费过快
+    1.这个设计没有考虑 消费>生产 ， 如果出现消费大于生产，就会黑屏因为没有视频帧，
+    2.我看在ffplay中是考虑了一下这个情况 加了 frame_queue_peek_readable() 函数
+    */
+   while(fq->size >= VIDEO_PICTURE_QUEUE_SIZE && !fq->abort){
+        SDL_CondWait(fq->cond,fq->mutex);//生产过剩 等待消费 等待队列有空间插入新帧
+   }
+   SDL_UnlockMutex(fq->mutex);
+
+   if(fq->abort)
+      return NULL;
+
+    return &fq->queue[fq->windex];    
+}
+//fq_2.视频帧已经保存到帧队列0的位置，写的index跳到1的位置
+static void frame_queue_push(FrameQueue *fq){
+    if(++fq->windex >= VIDEO_PICTURE_QUEUE_SIZE)
+        fq->windex = 0;
+    SDL_LockMutex(fq->mutex);
+    fq->size++;
+    SDL_CondSignal(fq->cond);//生产一个，发送消息给，等待消费的(本节中没有等待消费处理)
+    SDL_UnlockMutex(fq->mutex);
+}
+/*
+  渲染线程调用
+*/
+//fq_3.从帧队列中0的位置，读取Frame渲染
+static Frame *frame_queue_peek(FrameQueue *fq){
+    return &fq->queue[fq->rindex];
+}
+//fq_4.释放已经渲染位置的的帧，读帧的index调到1
+static void fream_queue_pop(FrameQueue *fq){
+    Frame *vp = &fq->queue[fq->rindex];
+    av_frame_unref(vp->frame);//结构中引用的所有数据
+    if(++fq->rindex >= VIDEO_PICTURE_QUEUE_SIZE)
+       fq->rindex = 0;
+    SDL_LockMutex(fq->mutex);
+    fq->size--;
+    SDL_CondSignal(fq->cond);//消费了一个，发出同步消息，给生产，如果生产在等待可以开始工作了
+    SDL_UnlockMutex(fq->mutex);
+}
+
+
 static void reander(VideoState *is)
 {
 
     // 分别渲染Y U V，并且告诉line size 对应 data[0],Y  data[1],U data[2],V
-    SDL_UpdateYUVTexture(is->texture, NULL, is->vFrame->data[0], is->vFrame->linesize[0],
-                         is->vFrame->data[1], is->vFrame->linesize[1],
-                         is->vFrame->data[2], is->vFrame->linesize[2]);
-    SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, is->texture, NULL, NULL); // 后面两个参数是 纹理的渲染大小
-    SDL_RenderPresent(renderer);
+    // SDL_UpdateYUVTexture(is->texture, NULL, is->vFrame->data[0], is->vFrame->linesize[0],
+    //                      is->vFrame->data[1], is->vFrame->linesize[1],
+    //                      is->vFrame->data[2], is->vFrame->linesize[2]);
+    // SDL_RenderClear(renderer);
+    // SDL_RenderCopy(renderer, is->texture, NULL, NULL); // 后面两个参数是 纹理的渲染大小
+    // SDL_RenderPresent(renderer);
 }
 
 // 接受到一个一个AVPacket
@@ -266,7 +417,7 @@ static int decode(VideoState *is)
     int ret = -1;
     char buf[1024];
 
-    ret = avcodec_send_packet(is->vCtx, is->vPkt);
+    // ret = avcodec_send_packet(is->video_ctx, is->vPkt);
     if (ret < 0)
     {
         av_log(NULL, AV_LOG_ERROR, "Failed to send frame to decoder!\n");
@@ -275,7 +426,7 @@ static int decode(VideoState *is)
 
     while (ret >= 0)
     {
-        ret = avcodec_receive_frame(is->vCtx, is->vFrame);
+        // ret = avcodec_receive_frame(is->video_ctx, is->vFrame);
         if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
         {
             ret = 0;
@@ -307,10 +458,10 @@ static int audio_decode_frame(VideoState *is)
             return -1;
         }
 
-        ret = avcodec_send_packet(is->aCtx, &pkt);
+        ret = avcodec_send_packet(is->audio_ctx, &pkt);
         if (ret < 0)
         {
-            av_log(is->aCtx, AV_LOG_ERROR, "Failed to send pkt to audio decoder!\n");
+            av_log(is->audio_ctx, AV_LOG_ERROR, "Failed to send pkt to audio decoder!\n");
             goto __OUT;
         }
 
@@ -320,7 +471,7 @@ static int audio_decode_frame(VideoState *is)
          */
         while (ret >= 0)
         {
-            ret = avcodec_receive_frame(is->aCtx, is->aFrame);
+            ret = avcodec_receive_frame(is->audio_ctx, &is->audio_frame);
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
             {
                 break; // 如果是这两种错误退出到上层循环 继续读取数据
@@ -328,7 +479,7 @@ static int audio_decode_frame(VideoState *is)
             else if (ret < 0)
             {
                 // 解码失败退出
-                av_log(is->aCtx, AV_LOG_ERROR, "Failed to receive frame from audio decoder!\n");
+                av_log(is->audio_ctx, AV_LOG_ERROR, "Failed to receive frame from audio decoder!\n");
                 goto __OUT;
             }
 
@@ -336,60 +487,60 @@ static int audio_decode_frame(VideoState *is)
              音频重采样 统一到 AV_SAMPLE_FMT_S16
              */
             // 初始化音频重采样上下文
-            if (!is->swr_ctx)
+            if (!is->audio_swr_ctx)
             {
                 AVChannelLayout in_ch_layout, out_ch_layout;
-                av_channel_layout_copy(&in_ch_layout, &is->aCtx->ch_layout);
+                av_channel_layout_copy(&in_ch_layout, &is->audio_ctx->ch_layout);
                 av_channel_layout_copy(&out_ch_layout, &in_ch_layout);
-                if (is->aCtx->sample_fmt != AV_SAMPLE_FMT_S16)
+                if (is->audio_ctx->sample_fmt != AV_SAMPLE_FMT_S16)
                 { // 需要重采样
-                    swr_alloc_set_opts2(&is->swr_ctx,
+                    swr_alloc_set_opts2(&is->audio_swr_ctx,
                                         &out_ch_layout,        // 输出声道数
                                         AV_SAMPLE_FMT_S16,     // 输出采样深度
-                                        is->aCtx->sample_rate, // 输出采样率
+                                        is->audio_ctx->sample_rate, // 输出采样率
                                         &in_ch_layout,         // 输入省道数
-                                        is->aCtx->sample_fmt,  // 输入采样深度
-                                        is->aCtx->sample_rate, // 输入采样率
+                                        is->audio_ctx->sample_fmt,  // 输入采样深度
+                                        is->audio_ctx->sample_rate, // 输入采样率
                                         0,
                                         NULL);
-                    swr_init(is->swr_ctx);
+                    swr_init(is->audio_swr_ctx);
                 }
             }
-            if (is->swr_ctx)
+            if (is->audio_swr_ctx)
             {
                 // 输入 拿到原始的数据 在音频AVFrame中 extended_data域 = data域
-                const uint8_t **in = (const uint8_t **)is->aFrame->extended_data;
-                int in_count = is->aFrame->nb_samples; // 采样个数
+                const uint8_t **in = (const uint8_t **)is->audio_frame.extended_data;
+                int in_count = is->audio_frame.nb_samples; // 采样个数
                 // 输出
                 uint8_t **out = &is->audio_buf;               // 重采样输出数据
-                int out_count = is->aFrame->nb_samples + 512; // 输出采样个数 512 融于值
+                int out_count = is->audio_frame.nb_samples + 512; // 输出采样个数 512 融于值
                 int out_size = av_samples_get_buffer_size(NULL,
-                                                          is->aFrame->ch_layout.nb_channels,
+                                                          is->audio_frame.ch_layout.nb_channels,
                                                           out_count, AV_SAMPLE_FMT_S16, 0);
                 // 输出的音频包开辟空间 实际开辟的空间audio_buf_size，out_size想要分配空间的大小
                 av_fast_malloc(&is->audio_buf, &is->audio_buf_size, out_size);
                 // 音频重采样
-                len2 = swr_convert(is->swr_ctx,
+                len2 = swr_convert(is->audio_swr_ctx,
                                    out,
                                    out_count,
                                    in,
                                    in_count);
                 // data_size = （len2）采样个数 x （nb_channels）音频通道数 x 位深
-                data_size = len2 * is->aFrame->ch_layout.nb_channels 
+                data_size = len2 * is->audio_frame.ch_layout.nb_channels 
                 * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
             }
             else
             {
                 // 不需要采样
-                is->audio_buf = is->aFrame->data[0];
+                is->audio_buf = is->audio_frame.data[0];
                 data_size = av_samples_get_buffer_size(NULL,
-                                                       is->aFrame->ch_layout.nb_channels,
-                                                       is->aFrame->nb_samples,
-                                                       is->aFrame->format,
+                                                       is->audio_frame.ch_layout.nb_channels,
+                                                       is->audio_frame.nb_samples,
+                                                       is->audio_frame.format,
                                                        1);
             }
             av_packet_unref(&pkt);
-            av_frame_unref(is->aFrame);
+            av_frame_unref(&is->audio_frame);
             return data_size;
         }
     }
@@ -483,9 +634,9 @@ int main(int argc, char *argv[])
     int aIdx = -1;
     AVStream *aInStream = NULL;
     const AVCodec *aDec = NULL;
-    AVCodecContext *aCtx = NULL;
+    AVCodecContext *audio_ctx = NULL;
     AVPacket *aPkt = NULL;
-    AVFrame *aFrame = NULL;
+    AVFrame *audio_frame = NULL;
     // 音频渲染相关
     SDL_AudioSpec wanted_spec, spec;
 
@@ -495,7 +646,7 @@ int main(int argc, char *argv[])
     int vIdx = -1;
     AVStream *vInStream = NULL;
     const AVCodec *vDec = NULL;
-    AVCodecContext *vCtx = NULL;
+    AVCodecContext *video_ctx = NULL;
     AVPacket *vPkt = NULL;
     AVFrame *vFrame = NULL;
     // 视频渲染相关
@@ -600,30 +751,30 @@ int main(int argc, char *argv[])
         goto __END;
     }
     // 6. 创建解码器上下文
-    vCtx = avcodec_alloc_context3(vDec);
-    if (!vCtx)
+    video_ctx = avcodec_alloc_context3(vDec);
+    if (!video_ctx)
     {
         av_log(NULL, AV_LOG_ERROR, "内存不足\n");
         goto __END;
     }
     // 7. 从视频流中拷贝解码器参数到解码器上文中
-    ret = avcodec_parameters_to_context(vCtx, vInStream->codecpar);
+    ret = avcodec_parameters_to_context(video_ctx, vInStream->codecpar);
     if (ret < 0)
     {
-        av_log(vCtx, AV_LOG_ERROR, "不能拷贝解码参数到视频解码环境中!\n");
+        av_log(video_ctx, AV_LOG_ERROR, "不能拷贝解码参数到视频解码环境中!\n");
         goto __END;
     }
 
     // 8. 绑定解码器上下文
-    ret = avcodec_open2(vCtx, vDec, NULL);
+    ret = avcodec_open2(video_ctx, vDec, NULL);
     if (ret < 0)
     {
-        av_log(vCtx, AV_LOG_ERROR, "打开视频解码器失败: %s \n", av_err2str(ret));
+        av_log(video_ctx, AV_LOG_ERROR, "打开视频解码器失败: %s \n", av_err2str(ret));
         goto __END;
     }
     // 9. 根据视频的宽/高创建纹理
-    video_width = vCtx->width;
-    video_height = vCtx->height;
+    video_width = video_ctx->width;
+    video_height = video_ctx->height;
     pixformat = SDL_PIXELFORMAT_IYUV;
     texture = SDL_CreateTexture(renderer,
                                 pixformat,
@@ -643,31 +794,31 @@ int main(int argc, char *argv[])
         goto __END;
     }
     // 6. 创建解码器上下文
-    aCtx = avcodec_alloc_context3(aDec);
-    if (!aCtx)
+    audio_ctx = avcodec_alloc_context3(aDec);
+    if (!audio_ctx)
     {
         av_log(NULL, AV_LOG_ERROR, "内存不足\n");
         goto __END;
     }
     // 7. 从视频流中拷贝解码器参数到解码器上文中
-    ret = avcodec_parameters_to_context(aCtx, aInStream->codecpar);
+    ret = avcodec_parameters_to_context(audio_ctx, aInStream->codecpar);
     if (ret < 0)
     {
-        av_log(aCtx, AV_LOG_ERROR, "不能拷贝解码参数到音频解码环境中!\n");
+        av_log(audio_ctx, AV_LOG_ERROR, "不能拷贝解码参数到音频解码环境中!\n");
         goto __END;
     }
     // 8. 绑定解码器上下文
-    ret = avcodec_open2(aCtx, aDec, NULL);
+    ret = avcodec_open2(audio_ctx, aDec, NULL);
     if (ret < 0)
     {
-        av_log(vCtx, AV_LOG_ERROR, "打开音频解码器失败: %s \n", av_err2str(ret));
+        av_log(video_ctx, AV_LOG_ERROR, "打开音频解码器失败: %s \n", av_err2str(ret));
         goto __END;
     }
     // 9. 初始化音频设备参数
     // 为音频设备设置参数
-    wanted_spec.freq = aCtx->sample_rate; // 采样率
+    wanted_spec.freq = audio_ctx->sample_rate; // 采样率
     wanted_spec.format = AUDIO_S16SYS;    // 有符号的16位
-    wanted_spec.channels = aCtx->ch_layout.nb_channels;
+    wanted_spec.channels = audio_ctx->ch_layout.nb_channels;
     wanted_spec.silence = 0;                 // 静默音
     wanted_spec.samples = AUDIO_BUFFER_SIZE; // 采样个数
     wanted_spec.callback = sdl_audio_callback;
@@ -692,15 +843,15 @@ int main(int argc, char *argv[])
     vFrame = av_frame_alloc();
     vPkt = av_packet_alloc();
     is->texture = texture;
-    is->vCtx = vCtx;
-    is->vPkt = vPkt;
-    is->vFrame = vFrame;
+    is->video_ctx = video_ctx;
+    // is->vPkt = vPkt;
+    // is->vFrame = vFrame;
     // 音频
-    aFrame = av_frame_alloc();
+    audio_frame = av_frame_alloc();
     aPkt = av_packet_alloc();
-    is->aCtx = aCtx;
-    is->aPkt = aPkt;
-    is->aFrame = aFrame;
+    is->audio_ctx = audio_ctx;
+    // is->aPkt = aPkt;
+    // is->audio_frame = audio_frame;
     packet_queue_init(&is->audioq);
 
     // 10. 从多媒体文件中读取数据，进行解码
@@ -708,7 +859,7 @@ int main(int argc, char *argv[])
     {
         if (pkt->stream_index == vIdx)
         {
-            av_packet_move_ref(is->vPkt, pkt);
+            // av_packet_move_ref(is->vPkt, pkt);
             // 11. 对解码后的视频帧进行渲染
             decode(is);
         }
@@ -734,7 +885,7 @@ int main(int argc, char *argv[])
         av_packet_unref(pkt);
     }
 
-    is->vPkt = NULL;
+    // is->vPkt = NULL;
     decode(is);
 
 __QUIT:
@@ -748,17 +899,17 @@ __END:
         av_packet_free(&pkt);
     }
     // 音频
-    if (aFrame)
+    if (audio_frame)
     {
-        av_frame_free(&aFrame);
+        av_frame_free(&audio_frame);
     }
     if (aPkt)
     {
         av_packet_free(&aPkt);
     }
-    if (aCtx)
+    if (audio_ctx)
     {
-        avcodec_free_context(&aCtx);
+        avcodec_free_context(&audio_ctx);
     }
     // 视频
     if (vFrame)
@@ -769,9 +920,9 @@ __END:
     {
         av_packet_free(&vPkt);
     }
-    if (vCtx)
+    if (video_ctx)
     {
-        avcodec_free_context(&vCtx);
+        avcodec_free_context(&video_ctx);
     }
 
     if (fmtCtx)
@@ -800,10 +951,55 @@ __END:
     return ret;
 }
 
-int main(int argc, char *argv[]){
+int main(int argc, char *argv[]) {
 
+  int 		  ret = 0;
+  int       flags = 0;
+  VideoState      *is;
+
+  av_log_set_level(AV_LOG_INFO);
+
+  if(argc < 2) {
+    fprintf(stderr, "Usage: command <file>\n");
+    exit(1);
+  }
+
+  //get filename
+  input_filename = argv[1];
+
+  flags = SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER;
+  if(SDL_Init(flags)) {
+    av_log(NULL, AV_LOG_FATAL, "Could not initialize SDL - %s\n", SDL_GetError());
+    exit(1);
+  }
+
+  //creat window from SDL
+  win = SDL_CreateWindow("Media Player",
+                         SDL_WINDOWPOS_UNDEFINED,
+                         SDL_WINDOWPOS_UNDEFINED,
+						             default_width, default_height,
+                         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+  if(win) {
+    renderer = SDL_CreateRenderer(win, -1, 0);
+  }
+
+  if(!win || !renderer){
+      av_log(NULL, AV_LOG_FATAL, "Failed to create window or renderer!\n");
+      do_exit(NULL);
+  }
+
+  //import: open audio and video stream
+  is = stream_open(input_filename);
+  if (!is) {
+      av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
+      do_exit(NULL);
+  }
+
+  //listen key or mouse event
+  sdl_event_loop(is);
+
+  return ret;
 }
-
 
 
 

@@ -52,13 +52,13 @@ typedef struct Frame {
 } Frame;
 
 typedef struct FrameQueue {
-    Frame queue[FRAME_QUEUE_SIZE];
-    int rindex;
-    int windex;
-    int size;
-    int abort;
-    SDL_mutex *mutex;
-    SDL_cond *cond;
+    Frame queue[FRAME_QUEUE_SIZE]; //储存解码后的帧
+    int rindex;          // 读取索引
+    int windex;          // 写入索引
+    int size;            // 队列中当前帧的数量
+    int abort;           // 标志队列是否中止
+    SDL_mutex *mutex;    // 互斥锁，用于线程同步
+    SDL_cond *cond;      // 条件变量，用于线程同步
 } FrameQueue;
 
 typedef struct VideoState {
@@ -75,7 +75,7 @@ typedef struct VideoState {
   double          frame_last_pts;
   double          frame_last_delay;
 
-  double          video_clock; ///<pts of last decoded frame / predicted pts of next decoded frame
+  double          video_clock; ///预测视频帧的pts <pts of last decoded frame / predicted pts of next decoded frame
   double          video_current_pts; ///<current displayed pts (different from video_clock if frame fifos are used)
   int64_t         video_current_pts_time;  ///< sys time (av_gettime) at which we updated video_current_pts - used to have running video pts
 
@@ -106,7 +106,7 @@ typedef struct VideoState {
 
   FrameQueue      pictq;
 
-  int width, height, xleft, ytop;
+  int width, height, xleft, ytop;//视频在SDL窗口位置和大小
   
   SDL_Thread      *read_tid;
   SDL_Thread      *decode_tid;
@@ -270,31 +270,28 @@ static void frame_queue_destory(FrameQueue *fq)
     SDL_DestroyMutex(fq->mutex);
     SDL_DestroyCond(fq->cond);
 }
-
-static void frame_queue_signal(FrameQueue *fq)
-{
-    SDL_LockMutex(fq->mutex);
-    SDL_CondSignal(fq->cond);
-    SDL_UnlockMutex(fq->mutex);
-}
-
-static Frame *frame_queue_peek(FrameQueue *fq)
-{
-    return &fq->queue[fq->rindex];
-}
-
+//1.获取当前写视频帧位置0，当前可储存AVFrame 的Frame
 static Frame *frame_queue_peek_writable(FrameQueue *fq)
 {
     /* wait until we have space to put a new frame */
     SDL_LockMutex(fq->mutex);
+    /*
+    生产没有消费完，等待消费，Frame queue没有处理消费，
+    因为一般在播放器中，生产>消费，不用担心消费过快
+    1.这个设计没有考虑 消费>生产 ， 如果出现消费大于生产，就会黑屏因为没有视频帧，
+    2.我看在ffplay中是考虑了一下这个情况 加了 frame_queue_peek_readable() 函数
+    */
     while (fq->size >= VIDEO_PICTURE_QUEUE_SIZE && !fq->abort) {
-        SDL_CondWait(fq->cond, fq->mutex);
+        SDL_CondWait(fq->cond, fq->mutex); 
     }
     SDL_UnlockMutex(fq->mutex);
 
+    if (fq->abort)
+        return NULL;
+   
     return &fq->queue[fq->windex];
 }
-
+//2.视频帧已经保存到帧队列0的位置，写的index跳到1的位置
 static void frame_queue_push(FrameQueue *fq)
 {
     if (++fq->windex == VIDEO_PICTURE_QUEUE_SIZE)
@@ -304,7 +301,12 @@ static void frame_queue_push(FrameQueue *fq)
     SDL_CondSignal(fq->cond);
     SDL_UnlockMutex(fq->mutex);
 }
-
+//3.从帧队列中0的位置，读取Frame渲染
+static Frame *frame_queue_peek(FrameQueue *fq)
+{
+    return &fq->queue[fq->rindex];
+}
+//4.释放已经渲染位置的的帧，读帧的index调到1
 static void frame_queue_pop(FrameQueue *fq)
 {
     Frame *vp = &fq->queue[fq->rindex];
@@ -313,18 +315,22 @@ static void frame_queue_pop(FrameQueue *fq)
         fq->rindex = 0;
     SDL_LockMutex(fq->mutex);
     fq->size--;
+    SDL_CondSignal(fq->cond);//消费了一个，发出同步消息，给生产，如果生产在等待可以开始工作了
+    SDL_UnlockMutex(fq->mutex);
+}
+//等待的线程发送同步消息
+static void frame_queue_signal(FrameQueue *fq)
+{
+    SDL_LockMutex(fq->mutex);
     SDL_CondSignal(fq->cond);
     SDL_UnlockMutex(fq->mutex);
 }
-
+//帧队列终止
 static void frame_queue_abort(FrameQueue *fq)
 {
     SDL_LockMutex(fq->mutex);
-
-    fq->abort = 1;
-
+    fq->abort = 1;//终止
     SDL_CondSignal(fq->cond);
-
     SDL_UnlockMutex(fq->mutex);
 }
 
@@ -364,20 +370,26 @@ double get_master_clock(VideoState *is) {
   }
 }
 
+//计算video_clock
 double synchronize_video(VideoState *is, AVFrame *src_frame, double pts) {
 
   double frame_delay;
 
   if(pts != 0) {
-    /* if we have pts, set video clock to it */
+    /* if we have pts, set video clock to it  */
     is->video_clock = pts;
   } else {
     /* if we aren't given a pts, set it to the clock */
-    pts = is->video_clock;
+    pts = is->video_clock;//如果这一帧没有pts，说明这一帧播放的时间不确定，把之前保存的video_clock给pts
   }
   /* update the video clock */
-  frame_delay = av_q2d(is->video_ctx->time_base);
-  /* if we are repeating a frame, adjust clock accordingly */
+  frame_delay = av_q2d(is->video_ctx->time_base);// 1/24 = 0.0416 s
+  /* if we are repeating a frame, adjust clock accordingly 
+     重复帧用于平滑视频播放，并调整帧率
+     重复帧（repeat_pict）是一个表示当前帧需要重复显示的次数的值，一般为0不重复
+     帧率平滑：通过使用半帧时间的增加量，视频解码器可以更准确地分配时间戳，
+     以平滑帧率转换。例如，从 24 FPS 转换到 30 FPS，或其他帧率转换。
+  */
   frame_delay += src_frame->repeat_pict * (frame_delay * 0.5);
   is->video_clock += frame_delay;
   return pts;
@@ -502,6 +514,7 @@ int audio_decode_frame(VideoState *is) {
       }
 
       if (!isnan(is->audio_frame.pts))
+        //音频时间，当前这帧还没有拷贝到声卡，可说时间是在后面一点，如果现在播放的10ms的音频，这里可能是20ms
         is->audio_clock = is->audio_frame.pts * av_q2d(is->audio_st->time_base) + is->audio_frame.nb_samples / is->audio_frame.sample_rate;
       else
         is->audio_clock = NAN;
@@ -623,6 +636,7 @@ static void video_display(VideoState *is){
     }
   }
   //4. calculate rect
+  // is->xleft = 100, is->ytop = 100,is->width = 100,is->height = 200;
   calculate_display_rect(&rect, is->xleft, is->ytop, is->width, is->height, vp->width, vp->height, vp->sar);
 
   //5. render
@@ -763,19 +777,24 @@ static int queue_picture(VideoState *is,
     if (!(vp = frame_queue_peek_writable(&is->pictq)))
         return -1;
 
-    vp->sar = src_frame->sample_aspect_ratio;
+    vp->sar = src_frame->sample_aspect_ratio; //SAR 表示单个像素的宽高比 SAR 为 1:1，则为方形像素
 
-    vp->width = src_frame->width;
-    vp->height = src_frame->height;
-    vp->format = src_frame->format;
+    vp->width = src_frame->width; //帧的宽
+    vp->height = src_frame->height;//帧的高
+    vp->format = src_frame->format; //像素格式 YUV420P、RGB24
 
     vp->pts = pts;
     vp->duration = duration;
     vp->pos = pos;
 
     //set_default_window_size(vp->width, vp->height, vp->sar);
-
-    av_frame_move_ref(vp->frame, src_frame);
+    /*
+    void av_frame_move_ref(AVFrame *dst, AVFrame *src) 
+    是 FFmpeg 库中用于在两个 AVFrame 结构体之间移动引用数据的函数。
+    这意味着将源帧 (src) 的数据和引用移动到目标帧 (dst)，同时清空源帧的数据。
+    这在处理视频和音频帧时非常有用，因为它可以有效地管理和转移帧数据，而无需进行数据的深度复制。
+     */
+    av_frame_move_ref(vp->frame, src_frame);//移动解码后的帧到Frame queue的制定位置
     frame_queue_push(&is->pictq);
     return 0;
 }
@@ -792,7 +811,7 @@ int decode_thread(void *arg) {
   Frame *vp = NULL;
 
   AVRational tb = is->video_st->time_base;
-  AVRational frame_rate = av_guess_frame_rate(is->ic, is->video_st, NULL);
+  AVRational frame_rate = av_guess_frame_rate(is->ic, is->video_st, NULL);//猜测视频流或帧的帧率（Frame Rate）
 
   video_frame = av_frame_alloc();
 
@@ -800,21 +819,21 @@ int decode_thread(void *arg) {
     if(is->quit) {
       break;
     }
-
-    if(packet_queue_get(&is->videoq, &is->video_pkt, 0) <= 0) {
+    //从视频队列中获取视频包
+    if(packet_queue_get(&is->videoq, &is->video_pkt, 0) <= 0) {//以非阻塞的方式从队列中获取包，如果没有就直接返回，并且等待10ms在取
       // means we quit getting packets
       av_log(is->video_ctx, AV_LOG_DEBUG, "video delay 10 ms\n");
       SDL_Delay(10);
       continue;
     }
-
+    //发送视频包给解码器
     ret = avcodec_send_packet(is->video_ctx, &is->video_pkt);
-    av_packet_unref(&is->video_pkt);
+    av_packet_unref(&is->video_pkt);//把包推给解码器后，他会拷贝一份，外部自己的引用计数清空，把包释放掉
     if(ret < 0) {
       av_log(is->video_ctx, AV_LOG_ERROR, "Failed to send pkt to video decoder!\n");
       goto __ERROR;
     }
-    
+    //轮询解码结果
     while(ret >=0) {
       ret = avcodec_receive_frame(is->video_ctx, video_frame);
       if(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF){
@@ -825,14 +844,19 @@ int decode_thread(void *arg) {
         goto __ERROR;
       }
       
-      //video_display(is);
+      //video_display(is); //解码后直接展示，没有音视频同步
 
       //av sync
-      duration = (frame_rate.num && frame_rate.den ? av_q2d((AVRational){frame_rate.den, frame_rate.num}) : 0);
-      pts = (video_frame->pts == AV_NOPTS_VALUE) ? NAN : video_frame->pts * av_q2d(tb);
-      pts = synchronize_video(is, video_frame, pts);
+      duration = (frame_rate.num && frame_rate.den ? av_q2d((AVRational){frame_rate.den, frame_rate.num}) : 0);//视频帧持续的时间
+      //0x8000000000000000 = 9223372036854775808 AV_NOPTS_VALUE 表示pts无效和没有初始化
+      pts = (video_frame->pts == AV_NOPTS_VALUE) ? NAN : video_frame->pts * av_q2d(tb);//这里是以秒为单位的时间
+      pts = synchronize_video(is, video_frame, pts);//计算video clock 视频的播放时长，当前的video_clock + 1/tbr(帧率)
       
-      //insert FrameQueue
+      /*
+       insert FrameQueue kt_pos: 这是一个 64 位的整数，
+       用于表示帧在原始输入文件中的字节偏移量，
+       它通常对应于该帧所在的压缩数据包（AVPacket）的文件位置
+      */
       queue_picture(is, video_frame, pts, duration, video_frame->pkt_pos);
 
       //sub reference count
@@ -942,11 +966,11 @@ int stream_component_open(VideoState *is, int stream_index) {
     is->video_st = st;
     is->video_ctx = avctx;
 
-    is->frame_timer = (double)av_gettime() / 1000000.0;
-    is->frame_last_delay = 40e-3;
-    is->video_current_pts_time = av_gettime();
+    is->frame_timer = (double)av_gettime() / 1000000.0; //视频播放了多长时间
+    is->frame_last_delay = 40e-3;//上一次渲染delay时间
+    is->video_current_pts_time = av_gettime();//当前pts的系统时间
 
-    //create decode thread
+    //create decode thread 创建视频的解码线程
     is->decode_tid = SDL_CreateThread(decode_thread, "decodec_thread", is);
    
     break;
@@ -1017,15 +1041,17 @@ int read_thread(void *arg) {
     goto __ERROR;
   }
 
-  if(audio_index >= 0) { //4. open audio part
+  if(audio_index >= 0) { //4. open audio part 打开音频流
     stream_component_open(is, audio_index);
   }
   if(video_index >= 0) { //5. open video part
+    //设置视频在DSL窗口上的显示
     AVStream *st = ic->streams[video_index];
     AVCodecParameters *codecpar = st->codecpar;
-    AVRational sar = av_guess_sample_aspect_ratio(ic, st, NULL);
+    AVRational sar = av_guess_sample_aspect_ratio(ic, st, NULL);//用于猜测视频流或帧的采样长宽比
     if (codecpar->width)
         set_default_window_size(codecpar->width, codecpar->height, sar);
+    //打开视频流    
     stream_component_open(is, video_index);
   }   
 
@@ -1037,7 +1063,10 @@ int read_thread(void *arg) {
       goto __ERROR;
     }
 
-    //limit queue size
+    /*
+    limit queue size
+    如果视频队列和音频队列满了，程序睡10毫秒，可持续睡
+    */
     if(is->audioq.size > MAX_QUEUE_SIZE ||
        is->videoq.size > MAX_QUEUE_SIZE) {
       SDL_Delay(10);
@@ -1048,6 +1077,7 @@ int read_thread(void *arg) {
     ret = av_read_frame(is->ic, pkt);
     if(ret < 0) {
       if(is->ic->pb->error == 0) {
+        //如果没有读取到包，等100毫秒在读
         SDL_Delay(100); /* no error; wait for user input */
         continue;
       } else {
@@ -1057,17 +1087,17 @@ int read_thread(void *arg) {
 
     //7. save packet to queue
     if(pkt->stream_index == is->video_index) {
-      packet_queue_put(&is->videoq, pkt);
+      packet_queue_put(&is->videoq, pkt);//视频包保存到视频队列
     } else if(pkt->stream_index == is->audio_index) {
-      packet_queue_put(&is->audioq, pkt);
+      packet_queue_put(&is->audioq, pkt);//音频包保存到音频队列
     } else { //discard other packets 
-      av_packet_unref(pkt);
+      av_packet_unref(pkt);//取他类型的包丢弃
     }
   }
 
   /* all done - wait for it */
   while(!is->quit) {
-    SDL_Delay(100);
+    SDL_Delay(100);//如果用户退出等100毫秒退出
   }
 
   ret = 0;
@@ -1076,7 +1106,7 @@ int read_thread(void *arg) {
   if(pkt) {
     av_packet_free(&pkt);
   }
-  
+  //推入SDL退出事件
   if(ret !=0 ){
     SDL_Event event;
     event.type = FF_QUIT_EVENT;
@@ -1105,7 +1135,7 @@ static void stream_component_close(VideoState *is, int stream_index){
       break;
   case AVMEDIA_TYPE_VIDEO:
     frame_queue_abort(&is->pictq);
-    frame_queue_signal(&is->pictq);
+    frame_queue_signal(&is->pictq); //可以确保所有等待的线程都被唤醒
     SDL_WaitThread(is->decode_tid, NULL);
     is->decode_tid = NULL;
       break;
@@ -1160,7 +1190,7 @@ static VideoState* stream_open(const char* filename){
       goto __ERROR;
       }
   
-  //初始化video frame queue
+  //初始化video frame queue 用于保存解码后的视频帧，ffplay中同时有音频的帧的queue这里为了简单不用了
   if(frame_queue_init(&is->pictq, VIDEO_PICTURE_QUEUE_SIZE) < 0) {
     goto __ERROR;
   }
