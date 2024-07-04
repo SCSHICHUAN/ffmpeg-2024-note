@@ -118,8 +118,8 @@ typedef struct VideoState {
 static const char *input_filename;
 static const char *window_title;
 
-static int default_width = 640;
-static int default_height = 480;
+static int default_width = 1080;
+static int default_height = 720;
 static int screen_width  = 0;
 static int screen_height = 0;
 
@@ -394,26 +394,79 @@ double synchronize_video(VideoState *is, AVFrame *src_frame, double pts) {
   is->video_clock += frame_delay;
   return pts;
 }
+/*
+DAR（Display Aspect Ratio，显示长宽比）：视频显示的宽高比。
+SAR（Sample Aspect Ratio，样本长宽比）：视频帧中每个像素的宽高比。
+PAR（Pixel Aspect Ratio，像素长宽比）：与 SAR 等同，用于描述每个像素的宽高比。
 
+在这种情况下，视频文件在显示设备上播放时，需要进行调整以匹配设备的像素特性，这可能会导致 SAR 和 PAR 的不一致。
+假设有一个视频文件，其编码信息指示 SAR 为 1:1（即像素为正方形），
+但该视频是为了在具有非正方形像素的显示设备上播放。在这种情况下，视频文件的 SAR 和实际显示设备的 PAR 可能会不一致。具体地：
+
+视频文件的 SAR 为 1:1（正方形像素）
+显示设备的 PAR 为 4:3（长方形像素）
+在这种情况下，视频文件在显示设备上播放时，需要进行调整以匹配设备的像素特性，
+这可能会导致 SAR 和 PAR 的不一致。
+
+int scr_xleft：屏幕左上角的 x 坐标。
+int scr_ytop：屏幕左上角的 y 坐标。
+int scr_width：设置宽度。
+int scr_height：设置的高度。
+int pic_width：视频帧的宽度。
+int pic_height：视频帧的高度。
+AVRational pic_sar：视频帧的样本长宽比（SAR）。
+ */
 static void calculate_display_rect(SDL_Rect *rect,
                                    int scr_xleft, int scr_ytop, int scr_width, int scr_height,
                                    int pic_width, int pic_height, AVRational pic_sar)
 {
+    //  pic_sar.num = 4,pic_sar.den = 3;
     AVRational aspect_ratio = pic_sar;
     int64_t width, height, x, y;
-
+   // aspect_ratio 无效（小于等于 0:1），则将其设置为 1:1（即像素为正方形）。
     if (av_cmp_q(aspect_ratio, av_make_q(0, 1)) <= 0)
         aspect_ratio = av_make_q(1, 1);
 
+    /*
+      假设一个视频帧的宽度为 720 像素，高度为 480 像素，SAR（或 PAR）为 4:3。
+                                   
+                                    宽度            720      4
+       视频帧的宽高比（DAR）为：DAR = ------- × SAR = ------ x --- = 2
+                                    高度            480      3
+     */
     aspect_ratio = av_mul_q(aspect_ratio, av_make_q(pic_width, pic_height));
 
     /* XXX: we suppose the screen has a 1.0 pixel ratio */
+    /*
+    高度添满
+    查看宽度释放适合
+    */
     height = scr_height;
-    width = av_rescale(height, aspect_ratio.num, aspect_ratio.den) & ~1;
+    width = av_rescale(height, aspect_ratio.num, aspect_ratio.den) & ~1;//av_rescale(int64_t a, int64_t b, int64_t c) a * b / c
     if (width > scr_width) {
         width = scr_width;
+        /*
+        1.“~1” 是对整数 1 进行按位取反操作。在 32 位整数表示中，
+        2.“1” 表示为 00000000 00000000 00000000 00000001，
+        按位取反后的结果是 11111111 11111111 11111111 11111110，即 0xFFFFFFFE。
+
+        3.按位与操作符 & 会对两个数的每一位执行与操作，即只有当两个数的对应位都是 1 时，结果才是 1，否则为 0。
+
+        4.将 1923 与 0xFFFFFFFE 进行按位与操作：
+
+                                  11110000011
+           & 11111111111111111111111111111110
+          --------------------------------------
+                                  11110000010  
+           11110000010 = 1922  
+         5.原数的最低位变成了 0，即 1923 被转换为 1922，确保了结果是偶数,设备显示需要  
+        */
         height = av_rescale(width, aspect_ratio.den, aspect_ratio.num) & ~1;
     }
+
+    printf("sar = %d/%d,aspect_ratio = %d/%d,d_width/d_height = %d/%d pic_w/pic_h = %d/%d \n",
+    pic_sar.num,pic_sar.den,aspect_ratio.num,aspect_ratio.den,(int)width,(int)height,pic_width,pic_height);
+
     x = (scr_width - width) / 2;
     y = (scr_height - height) / 2;
     rect->x = scr_xleft + x;
@@ -1049,8 +1102,17 @@ int read_thread(void *arg) {
     AVStream *st = ic->streams[video_index];
     AVCodecParameters *codecpar = st->codecpar;
     AVRational sar = av_guess_sample_aspect_ratio(ic, st, NULL);//用于猜测视频流或帧的采样长宽比
-    if (codecpar->width)
-        set_default_window_size(codecpar->width, codecpar->height, sar);
+    if (codecpar->width){
+       if(codecpar->width <= default_width && codecpar->height <= default_height){
+          set_default_window_size(codecpar->width, codecpar->height, sar);
+       }else{
+          set_default_window_size(default_width, default_height, sar);
+       }
+    }else{
+      set_default_window_size(default_width, default_height, sar);
+    }
+        
+    
     //打开视频流    
     stream_component_open(is, video_index);
   }   

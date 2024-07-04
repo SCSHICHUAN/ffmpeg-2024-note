@@ -29,6 +29,11 @@ Create by stan 2024-6-30
 #include <libswresample/swresample.h>
 #include <SDL.h>
 
+//sdl
+#define FF_REFRESH_EVENT (SDL_USEREVENT)
+#define FF_QUIT_EVENT (SDL_USEREVENT + 1)
+
+#define MAX_QUEUE_SIZE (5 * 1024 * 1024)
 #define AUDIO_BUFFER_SIZE 1024
 
 #define VIDEO_PICTURE_QUEUE_SIZE 3
@@ -38,8 +43,8 @@ Create by stan 2024-6-30
 static const char *input_filename;
 static const char *window_title;
 
-static int default_width = 640;
-static int default_height = 480;
+static int default_width = 1080; //期望显示的宽
+static int default_height = 720; //期望显示的高
 static int screen_width  = 0;
 static int screen_height = 0;
 
@@ -47,11 +52,14 @@ static SDL_Window      *win;
 static SDL_Renderer    *renderer;
 
 
+
 enum {
   AV_SYNC_AUDIO_MASTER,
   AV_SYNC_VIDEO_MASTER,
   AV_SYNC_EXTERNAL_MASTER,
 };
+
+static int av_sync_type = AV_SYNC_AUDIO_MASTER;
 
 // SDL 窗口的大小
 static int w_width = 720;
@@ -85,7 +93,7 @@ typedef struct Fram{
     int width;       //帧的宽
     int height;      //帧的高
     int format;      //像素格式
-    AVRational sar;  //time base
+    AVRational sar;  //帧的宽高比
 }Frame;
 
 typedef struct FrameQueue{
@@ -139,7 +147,7 @@ typedef struct VideoState{
     struct SwsContext *sws_ctx; //视频重采样
     SDL_Texture     *texture;   //纹理
     FrameQueue      pictq;      //储存解码后的视频帧 
-    int width, height, xleft, ytop;
+    int width, height, xleft, ytop;//视频在SDL窗口位置和大小
   
     //线程和退出
     SDL_Thread      *read_tid;  //读取数据线程
@@ -615,7 +623,7 @@ static void sdl_audio_callback(void *userdata, Uint8 *stream, int len)
 12. 处理SDL事件
 13. 收尾，释放资源
 */
-int main(int argc, char *argv[])
+int main2(int argc, char *argv[])
 {
 
     int ret = -1;
@@ -951,58 +959,372 @@ __END:
     return ret;
 }
 
-int main(int argc, char *argv[]) {
+int stream_component_open(VideoState *is,int strean_index){
 
-  int 		  ret = 0;
-  int       flags = 0;
-  VideoState      *is;
+}
 
-  av_log_set_level(AV_LOG_INFO);
+/*
+DAR（Display Aspect Ratio，显示长宽比）：视频显示的宽高比。
+SAR（Sample Aspect Ratio，样本长宽比）：视频帧中每个像素的宽高比。
+PAR（Pixel Aspect Ratio，像素长宽比）：与 SAR 等同，用于描述每个像素的宽高比。
 
-  if(argc < 2) {
-    fprintf(stderr, "Usage: command <file>\n");
-    exit(1);
+在这种情况下，视频文件在显示设备上播放时，需要进行调整以匹配设备的像素特性，这可能会导致 SAR 和 PAR 的不一致。
+假设有一个视频文件，其编码信息指示 SAR 为 1:1（即像素为正方形），
+但该视频是为了在具有非正方形像素的显示设备上播放。在这种情况下，视频文件的 SAR 和实际显示设备的 PAR 可能会不一致。具体地：
+
+视频文件的 SAR 为 1:1（正方形像素）
+显示设备的 PAR 为 4:3（长方形像素）
+在这种情况下，视频文件在显示设备上播放时，需要进行调整以匹配设备的像素特性，
+这可能会导致 SAR 和 PAR 的不一致。
+
+int scr_xleft：屏幕左上角的 x 坐标。
+int scr_ytop：屏幕左上角的 y 坐标。
+int scr_width：设置宽度。
+int scr_height：设置的高度。
+int pic_width：视频帧的宽度。
+int pic_height：视频帧的高度。
+AVRational pic_sar：视频帧的样本长宽比（SAR）。
+ */
+
+static void calculate_display_rect(SDL_Rect *rect,
+                                    int scr_xleft,int scr_ytop,
+                                    int scr_width,int scr_height,
+                                    int pic_width,int pic_height,
+                                    AVRational pic_sar){
+    //  pic_sar.num = 4,pic_sar.den = 3;
+    AVRational aspect_ratio = pic_sar;
+    int64_t width,height,x,y;
+    // aspect_ratio 无效（小于等于 0:1），则将其设置为 1:1（即像素为正方形）。                                    
+    if(av_cmp_q(aspect_ratio,av_make_q(0,1)) <= 0)
+       aspect_ratio = av_make_q(1,1);
+    /*
+      假设一个视频帧的宽度为 720 像素，高度为 480 像素，SAR（或 PAR）为 4:3。
+                                   
+                                    宽度            720      4
+       视频帧的宽高比（DAR）为：DAR = ------- × SAR = ------ x --- = 2
+                                    高度            480      3
+     */   
+    aspect_ratio = av_mul_q(aspect_ratio,av_make_q(pic_width,pic_height));
+     /* XXX: we suppose the screen has a 1.0 pixel ratio */
+    /*
+    高度添满
+    查看宽度释放适合
+    */
+    height = scr_height;
+    //av_rescale(int64_t a, int64_t b, int64_t c) a * b / c
+    width = av_rescale(height,aspect_ratio.num,aspect_ratio.den) & ~1;
+    if(width > scr_height){
+       width = screen_width;
+        /*
+        1.“~1” 是对整数 1 进行按位取反操作。在 32 位整数表示中，
+        2.“1” 表示为 00000000 00000000 00000000 00000001，
+        按位取反后的结果是 11111111 11111111 11111111 11111110，即 0xFFFFFFFE。
+
+        3.按位与操作符 & 会对两个数的每一位执行与操作，即只有当两个数的对应位都是 1 时，结果才是 1，否则为 0。
+
+        4.将 1923 与 0xFFFFFFFE 进行按位与操作：
+
+                                  11110000011
+           & 11111111111111111111111111111110
+          --------------------------------------
+                                  11110000010  
+           11110000010 = 1922  
+         5.原数的最低位变成了 0，即 1923 被转换为 1922，确保了结果是偶数,设备显示需要  
+        */
+       height = av_rescale(width,aspect_ratio.den, aspect_ratio.num) & ~1;
+    }   
+   
+   //计算frame x y
+   x = (scr_width - width) / 2;
+   y = (scr_height - height) /2;
+   rect->x = scr_xleft + x;
+   rect->y = scr_ytop + y;
+   //计算frame的 宽高
+   rect->w = FFMAX((int)width,1);
+   rect->h = FFMAX((int)height,1);
+
+}
+
+static void set_default_window_size(int width,int height,AVRational sar){
+    SDL_Rect rect;
+    int max_width = screen_width ? screen_width : INT_MAX;
+    int max_height = screen_height ? screen_height : INT_MAX;
+    if(max_width == INT_MAX && max_height == INT_MAX)
+       max_height = height;
+    calculate_display_rect(&rect,0,0,max_width,max_height,width,height,sar);
+    default_width = rect.w;
+    default_height = rect.h;  
+}
+
+int read_thread(void *arg){
+    Uint32 pixformat;
+    int ret = -1;
+    int video_index  = -1;
+    int audio_index  = -1;
+
+    VideoState *is = (VideoState*)arg;
+    AVFormatContext *ic = NULL;
+    AVPacket *pkt = NULL;
+
+    pkt = av_packet_alloc();
+    if(!pkt){
+        av_log(NULL, AV_LOG_FATAL, "NO MEMORY!\n");
+        goto __ERROR;
+    }
+    
+    //1. Open media file
+  if((ret = avformat_open_input(&ic, is->filename, NULL, NULL)) < 0) {
+    av_log(NULL, AV_LOG_ERROR, "Could not open file: %s, %d(%s)\n", is->filename, ret, av_err2str(ret));
+    goto __ERROR; // Couldn't open file
+  }
+  is->ic = ic;
+  
+  //2. extract media info
+  if(avformat_find_stream_info(ic, NULL) < 0) { 
+    av_log(NULL, AV_LOG_FATAL, "Couldn't find stream information\n");
+    goto __ERROR;
+  }
+  
+  //3. Find the first audio and video stream
+  for(int i = 0; i < ic->nb_streams; i++) {
+    AVStream *st = ic->streams[i];
+    enum AVMediaType type = st->codecpar->codec_type;
+    if(type == AVMEDIA_TYPE_VIDEO && video_index < 0) {
+      video_index=i;
+    }
+    if(type == AVMEDIA_TYPE_AUDIO && audio_index < 0) {
+      audio_index=i;
+    }
+     //find video and audio
+    if(video_index > -1 && audio_index > -1) {
+      break;
+    }
   }
 
-  //get filename
-  input_filename = argv[1];
-
-  flags = SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER;
-  if(SDL_Init(flags)) {
-    av_log(NULL, AV_LOG_FATAL, "Could not initialize SDL - %s\n", SDL_GetError());
-    exit(1);
+  if(video_index < 0 || audio_index < 0) {
+    av_log(NULL, AV_LOG_ERROR, "多媒体文件必须包含视频和音频!\n");
+    goto __ERROR;
   }
 
-  //creat window from SDL
-  win = SDL_CreateWindow("Media Player",
-                         SDL_WINDOWPOS_UNDEFINED,
-                         SDL_WINDOWPOS_UNDEFINED,
-						             default_width, default_height,
-                         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-  if(win) {
-    renderer = SDL_CreateRenderer(win, -1, 0);
+  //音视频编解码器初始化
+  if(audio_index >= 0){
+    stream_component_open(is,audio_index);
+  }
+  if(video_index >= 0 ){
+     AVStream *st = ic->streams[video_index];
+     AVCodecParameters *codecpar = st->codecpar;
+     AVRational sar = av_guess_sample_aspect_ratio(is,st,NULL);//猜测视频流或帧的采样长宽比
+     //如果显示帧的显示区域大于期望的区域，就等于期望的区域
+     if (codecpar->width){
+       if(codecpar->width <= default_width && codecpar->height <= default_height){
+          set_default_window_size(codecpar->width, codecpar->height, sar);
+       }else{
+          set_default_window_size(default_width, default_height, sar);
+       }
+    }else{
+      set_default_window_size(default_width, default_height, sar);
+    }
+
+     //打开视频流    
+    stream_component_open(is, video_index);
+
+    //读取多媒体包保存在pkt queue中
+    for(;;){
+        if(is->quit){
+            ret = -1;
+            goto __ERROR;
+        }
+
+        //没有消费完循环等待10ms，queue满了
+        if(is->audioq.size > MAX_QUEUE_SIZE ||
+           is->videoq.size > MAX_QUEUE_SIZE){
+            SDL_Delay(10);
+            continue;
+           }
+        //从上下文中读取包   
+        ret = av_read_frame(is->ic,pkt);
+        if(ret < 0){
+            if(is->ic->pb->error == 0){//no error; wait for user input
+                /*
+                如果还没有读取到包，等100毫秒在读
+                */
+                SDL_Delay(100);
+                continue;
+            }else{
+                break;
+            }
+        }
+
+        //pkt 保存到 pkt queue中
+        if(pkt->stream_index == is->video_index){
+            packet_queue_put(&is->videoq,pkt); //视频包保存到视频队列
+        }else if(pkt->stream_index == is->audio_buf_index){
+            packet_queue_put(&is->audioq,pkt); //音频包保存到音频队列
+        }else{
+            av_packet_unref(pkt);              //取他类型的包丢弃
+        }
+    }
   }
 
-  if(!win || !renderer){
-      av_log(NULL, AV_LOG_FATAL, "Failed to create window or renderer!\n");
-      do_exit(NULL);
-  }
+  /* all done - wait for it 如果读取完了 等待100ms*/
+   while (!is->quit){
+        SDL_Delay(100);
+    }
 
-  //import: open audio and video stream
-  is = stream_open(input_filename);
-  if (!is) {
-      av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
-      do_exit(NULL);
-  }
 
-  //listen key or mouse event
-  sdl_event_loop(is);
+__ERROR:
+    if(pkt){
+        av_packet_free(&pkt);
+    }
+    if(ret !=0 ){
+    SDL_Event event;
+    event.type = FF_QUIT_EVENT;
+    event.user.data1 = is;
+    SDL_PushEvent(&event);
+  }
 
   return ret;
 }
 
+static void stream_close(VideoState *is){
+
+}
+
+static Uint32 sdl_refresh_timer_cb(Uint32 interval,void *opaque){
+    SDL_Event event;
+    event.type = FF_REFRESH_EVENT;
+    event.user.data1 = opaque;
+    SDL_PushEvent(&event);
+    return 0;
+}
+static void schedule_refresh(VideoState *is,int delay){
+    SDL_AddTimer(delay,sdl_refresh_timer_cb,is);
+}
+static VideoState *stream_open(const char* filename){
+
+    VideoState *is;
+    is = av_mallocz(sizeof(VideoState));
+    if(!is){
+        av_log(NULL,AV_LOG_FATAL,"内存不足！\n");
+        return NULL;
+    }
+
+    is->audio_index = is->video_index =-1;
+    is->filename = av_strdup(filename);//源字符串的内容复制到新分配的内存区域，并返回指向该区域的指针
+    if(!is->filename){
+        goto __ERROR;
+    }
+
+    is->ytop = 0;
+    is->xleft = 0;
+    
+    //初始化packet queue
+    if(packet_queue_init(&is->videoq) < 0 || packet_queue_init(&is->audioq) < 0){
+        goto __ERROR;
+    }
+    /*
+    初始化video frame queue 用于保存解码后的视频帧，
+    ffplay中同时有音频的帧的queue这里为了简单,没有音频的
+    */
+   if(frame_queue_init(&is->pictq,VIDEO_PICTURE_QUEUE_SIZE) < 0){
+     goto __ERROR;
+   }
+
+   is->av_sync_type = av_sync_type;
+   is->read_tid = SDL_CreateThread(read_thread,"read_thread",is);
+   if(!is->read_tid){
+      av_log(NULL,AV_LOG_FATAL,"SDL_CreateThread():%s\n",SDL_GetError());
+      goto __ERROR;
+   }
+
+   schedule_refresh(is,40);//开始刷新视频帧 开是40ms一次
+   
+   return is;
+__ERROR:
+  stream_close(is);
+  return NULL;
+}
 
 
+
+
+void video_refresh_timer(void *userdata){
+
+}
+
+static void do_exit(VideoState *is){
+    if(is){
+        stream_close(is);
+    }
+    if(renderer)
+       SDL_DestroyRenderer(renderer);
+    if(win)
+       SDL_DestroyWindow(win);
+    SDL_Quit();
+    av_log(NULL,AV_LOG_QUIET,"%s","");      
+}
+
+static void sdl_event_loop(VideoState *is){
+    SDL_Event event;
+    for(;;){
+        SDL_WaitEvent(&event);
+        switch(event.type){
+            case FF_QUIT_EVENT:
+            case SDL_QUIT:
+            is->quit = 1;
+            do_exit(is);
+            break;
+            case FF_REFRESH_EVENT:
+            video_refresh_timer(event.user.data1);
+            break;
+            default:
+            break;
+        }
+    }
+}
+
+int main(int argc,char* argv[]){
+    int ret  = 0;
+    int flags = 0;
+    VideoState *is;
+
+    av_log_set_level(AV_LOG_INFO);
+
+    if(argc < 2){
+        fprintf(stderr,"没有输入文件\n");
+        exit(1);
+    }
+
+    input_filename = argv[1];
+
+    flags = SDL_INIT_AUDIO | SDL_INIT_AUDIO | SDL_INIT_TIMER;
+    if(SDL_Init(flags)){
+        av_log(NULL,AV_LOG_FATAL,"不能初始化SDL - %s\n",SDL_GetError());
+        exit(1);
+    }
+
+    win = SDL_CreateWindow("scplayer",
+                            SDL_WINDOWPOS_UNDEFINED,
+                            SDL_WINDOWPOS_UNDEFINED,
+                            default_width,
+                            default_height,
+                            SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+    if(win){
+       renderer = SDL_CreateRenderer(win,-1,0); 
+    }                        
+    if(!win || !renderer){
+        av_log(NULL,AV_LOG_FATAL,"创建窗口和渲染失败\n");
+        do_exit(NULL);
+    }
+
+    is = stream_open(input_filename);
+    if(!is){
+        av_log(NULL,AV_LOG_FATAL,"初始化VideoState失败\n");
+        do_exit(NULL);
+    }
+
+    sdl_event_loop(is);//循环读取事件，主要是视频帧显示事件
+}
 /*
 
 “.”和“->”的区别
