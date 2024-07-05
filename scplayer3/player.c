@@ -801,10 +801,10 @@ void video_refresh_timer(void *userdata) {
       is->frame_timer += delay; //推算出下一帧的显示时间
       /* computer the REAL delay 
         一帧确定好系统时间后，后面就将要播放的帧的时间换算成系统时间，
-        如果发现要播放的帧的时间落后于系统时间就将其播放出来。
+        如果发现要播放的帧的时间落后于系统时间就将其播放出来。  
       */
       //查看这一帧是不是要显示，对比推算的时间和当前时间，如果推算的时间等于当前时间，立刻马上显示
-      actual_delay = is->frame_timer - (av_gettime() / 1000000.0);//为什么要减因为开始时 is->frame_timer是等于系统时间的
+      actual_delay = is->frame_timer - (av_gettime() / 1000000.0);
       if(actual_delay < 0.010) {
         /* Really it should skip the picture instead */
         actual_delay = 0.010;
