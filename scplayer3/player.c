@@ -567,8 +567,12 @@ int audio_decode_frame(VideoState *is) {
       }
 
       if (!isnan(is->audio_frame.pts))
-        //音频时间，当前这帧还没有拷贝到声卡，可说时间是在后面一点，如果现在播放的10ms的音频，这里可能是20ms
-        is->audio_clock = is->audio_frame.pts * av_q2d(is->audio_st->time_base) + is->audio_frame.nb_samples / is->audio_frame.sample_rate;
+        /*
+        is->audio_clock = pts + 帧的持续时间
+          当前播放调时刻  =  is->audio_clock - 音频帧剩余数据/bytes_per_sec
+        */
+        is->audio_clock = is->audio_frame.pts * av_q2d(is->audio_st->time_base)
+                        + is->audio_frame.nb_samples / is->audio_frame.sample_rate;
       else
         is->audio_clock = NAN;
       
@@ -703,7 +707,6 @@ static void video_display(VideoState *is){
 	SDL_RenderCopy(renderer, is->texture, NULL, &rect);
   //SDL_RenderCopy(renderer, is->texture, NULL, NULL);
 	SDL_RenderPresent(renderer); 
-
   //6. release frame
   frame_queue_pop(&is->pictq);
 }
@@ -733,7 +736,7 @@ void video_refresh_timer(void *userdata) {
       */
       vp = frame_queue_peek(&is->pictq);//队列中取到要渲染的frame
       is->video_current_pts = vp->pts;//对is的域赋值，当前video的pts
-      is->video_current_pts_time = av_gettime();//系统时间
+      is->video_current_pts_time = av_gettime();//当前视频帧显示时间
       if(is->frame_last_pts == 0) {//一步是开始时 frame_last_pts 是为 0
         delay = 0;
       }else {
@@ -768,13 +771,15 @@ void video_refresh_timer(void *userdata) {
 
         /* Skip or repeat the frame. Take delay into account
           FFPlay still doesn't "know if this is the best guess."
-          sync_threshold 视频当前帧和下一帧的时间比较
-          diff           是视频时间和音频时间比较
           
-          （视频时间 - 音频audio_clock的时间）  当前的pts - 上一帧的pts，
+                sync_threshold   视频当前帧和下一帧的时间比较  视频自己的delay
+                          diff   是视频时间和音频时间比较     视频和音频
+          
+           视频时间 - 音频audio_clock的时间     当前的pts - 上一帧的pts，
            vp->pts - ref_clock               vp->pts - is->frame_last_pts
                   |                                  |
                 diff                               delay
+
             ---------------- 0 ---------------> x
               -3      -1           1       3
              diff   delay        delay   diff
@@ -793,15 +798,17 @@ void video_refresh_timer(void *userdata) {
       }
 
       // printf("delay=%.4f ",delay);
-
-      is->frame_timer += delay;
-      /* computer the REAL delay */
+      is->frame_timer += delay; //推算出下一帧的显示时间
+      /* computer the REAL delay 
+        一帧确定好系统时间后，后面就将要播放的帧的时间换算成系统时间，
+        如果发现要播放的帧的时间落后于系统时间就将其播放出来。
+      */
+      //查看这一帧是不是要显示，对比推算的时间和当前时间，如果推算的时间等于当前时间，立刻马上显示
       actual_delay = is->frame_timer - (av_gettime() / 1000000.0);//为什么要减因为开始时 is->frame_timer是等于系统时间的
       if(actual_delay < 0.010) {
         /* Really it should skip the picture instead */
         actual_delay = 0.010;
       }
-
       schedule_refresh(is, (int)(actual_delay * 1000 + 0.5));
       printf("schedule_refresh_time= %dms\n",(int)(actual_delay * 1000 + 0.5));
       /* show the picture!
@@ -1019,7 +1026,7 @@ int stream_component_open(VideoState *is, int stream_index) {
     is->video_st = st;
     is->video_ctx = avctx;
 
-    is->frame_timer = (double)av_gettime() / 1000000.0; //视频播放了多长时间
+    is->frame_timer = (double)av_gettime() / 1000000.0; //第一帧视频播放的时刻，加一个delay就是第二帧，加第二哥delay就是下一帧，以此类推
     is->frame_last_delay = 40e-3;//上一次渲染delay时间
     is->video_current_pts_time = av_gettime();//当前pts的系统时间
 

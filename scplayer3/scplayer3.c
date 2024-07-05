@@ -537,10 +537,12 @@ static int audio_decode_frame(VideoState *is)
                                                        1);
             }
 
-
             //计算音频已经播放的时间
             if(!isnan(is->audio_frame.pts)){
-                //音频时间，当前这帧还没有拷贝到声卡，可说时间是在后面一点，如果现在播放的10ms的音频，这里可能是20ms
+                /*
+                is->audio_clock = pts + 帧的持续时间 （先加进来在减）
+                当前播放调时刻  =  is->audio_clock - 音频帧剩余数据/bytes_per_sec
+                 */
                 is->audio_clock = is->audio_frame.pts * av_q2d(is->audio_st->time_base) 
                                   + is->audio_frame.nb_samples / is->audio_frame.sample_rate;
             }else{
