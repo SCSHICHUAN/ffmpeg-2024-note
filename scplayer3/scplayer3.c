@@ -22,12 +22,14 @@ Create by stan 2024-6-30
 四.音视频同步 ---线程1中 主线程
  */
 
+#include <SDL2/SDL.h>
 #include <libavutil/avutil.h>
 #include <libavutil/fifo.h>
-#include <libavformat/avformat.h>
+#include <libavutil/time.h>
 #include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
-#include <SDL.h>
 
 //sdl
 #define FF_REFRESH_EVENT (SDL_USEREVENT)
@@ -35,6 +37,13 @@ Create by stan 2024-6-30
 
 #define MAX_QUEUE_SIZE (5 * 1024 * 1024)
 #define AUDIO_BUFFER_SIZE 1024
+/*
+1.00 秒 = 1000.00 毫秒
+1.00 秒 = 1000000.00 微秒 用英文表示
+1.00 s = 1000.00 ms
+1.00 s = 1000000.00 µs
+ */
+#define ch_µs_to_s 1000000.0
 
 #define VIDEO_PICTURE_QUEUE_SIZE 3
 #define SAMPLE_QUEUE_SIZE 9
@@ -50,6 +59,9 @@ static int screen_height = 0;
 
 static SDL_Window      *win;
 static SDL_Renderer    *renderer;
+static int is_full_screen = 0;
+static int screen_left = SDL_WINDOWPOS_CENTERED;
+static int screen_top = SDL_WINDOWPOS_CENTERED;
 
 
 
@@ -181,6 +193,32 @@ static int packet_queue_init(PacketQueue *q)
     }
     return 0;
 }
+// 清空队列
+static void packet_queue_flush(PacketQueue *q)
+{
+    MyPacketEle mypkt;
+
+    SDL_LockMutex(q->mutex);
+    while (av_fifo_read(q->pkts, &mypkt, 1) > 0)
+    {
+        av_packet_free(&mypkt.pkt);
+    }
+    q->nb_packets = 0;
+    q->size = 0;
+    q->duration = 0;
+
+    SDL_UnlockMutex(q->mutex);
+}
+// 销毁队列
+static void packet_queue_destroy(PacketQueue *q)
+{
+    packet_queue_flush(q);
+    av_fifo_freep2(&q->pkts);
+    SDL_DestroyMutex(q->mutex);
+    SDL_DestroyCond(q->cond);
+}
+
+
 
 // put 私有的方法
 static int packet_queue_put_priv(PacketQueue *q, AVPacket *pkt)
@@ -260,30 +298,7 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block)
     return ret;
 }
 
-// 清空队列
-static void packet_queue_flush(PacketQueue *q)
-{
-    MyPacketEle mypkt;
 
-    SDL_LockMutex(q->mutex);
-    while (av_fifo_read(q->pkts, &mypkt, 1) > 0)
-    {
-        av_packet_free(&mypkt.pkt);
-    }
-    q->nb_packets = 0;
-    q->size = 0;
-    q->duration = 0;
-
-    SDL_UnlockMutex(q->mutex);
-}
-// 销毁队列
-static void packet_queue_destory(PacketQueue *q)
-{
-    packet_queue_flush(q);
-    av_fifo_freep2(&q->pkts);
-    SDL_DestroyMutex(q->mutex);
-    SDL_DestroyCond(q->cond);
-}
 
 /*
   自定义Frame queue
@@ -398,52 +413,6 @@ static void fream_queue_pop(FrameQueue *fq){
     fq->size--;
     SDL_CondSignal(fq->cond);//消费了一个，发出同步消息，给生产，如果生产在等待可以开始工作了
     SDL_UnlockMutex(fq->mutex);
-}
-
-
-static void reander(VideoState *is)
-{
-
-    // 分别渲染Y U V，并且告诉line size 对应 data[0],Y  data[1],U data[2],V
-    // SDL_UpdateYUVTexture(is->texture, NULL, is->vFrame->data[0], is->vFrame->linesize[0],
-    //                      is->vFrame->data[1], is->vFrame->linesize[1],
-    //                      is->vFrame->data[2], is->vFrame->linesize[2]);
-    // SDL_RenderClear(renderer);
-    // SDL_RenderCopy(renderer, is->texture, NULL, NULL); // 后面两个参数是 纹理的渲染大小
-    // SDL_RenderPresent(renderer);
-}
-
-// 接受到一个一个AVPacket
-static int decode(VideoState *is)
-{
-    int ret = -1;
-    char buf[1024];
-
-    // ret = avcodec_send_packet(is->video_ctx, is->vPkt);
-    if (ret < 0)
-    {
-        av_log(NULL, AV_LOG_ERROR, "Failed to send frame to decoder!\n");
-        goto __OUT;
-    }
-
-    while (ret >= 0)
-    {
-        // ret = avcodec_receive_frame(is->video_ctx, is->vFrame);
-        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-        {
-            ret = 0;
-            goto __OUT;
-        }
-        else if (ret < 0)
-        {
-            ret = -1;
-            goto __OUT;
-        }
-        reander(is);
-    }
-
-__OUT:
-    return ret;
 }
 
 static int audio_decode_frame(VideoState *is)
@@ -604,308 +573,8 @@ static void sdl_audio_callback(void *userdata, Uint8 *stream, int len)
     }
 }
 
-/*
-1. 判断输入参数
-2. 初始化SDL，并创建窗口和Render
-2.1
-2.2 creat window from SDL
-3. 打开多媒体文件，并获得流信息
-4. 查找最好的视频流
-5. 根据流中的codec_id, 获得解码器
-6. 创建解码器上下文
-7. 从视频流中拷贝解码器参数到解码器上文中
-8. 绑定解码器上下文
-9. 根据视频的宽/高创建纹理
-10. 从多媒体文件中读取数据，进行解码
-11. 对解码后的视频帧进行渲染
-12. 处理SDL事件
-13. 收尾，释放资源
-*/
-int main2(int argc, char *argv[])
-{
 
-    int ret = -1;
-    char *src = NULL;
-    SDL_Event event;
 
-    VideoState *is = NULL;
-
-    // ffmpeg 参数
-    AVFormatContext *fmtCtx = NULL;
-    AVPacket *pkt = NULL;
-
-    /*
-      音频参数
-    */
-    int aIdx = -1;
-    AVStream *aInStream = NULL;
-    const AVCodec *aDec = NULL;
-    AVCodecContext *audio_ctx = NULL;
-    AVPacket *aPkt = NULL;
-    AVFrame *audio_frame = NULL;
-    
-
-    /*
-      视频参数
-    */
-    int vIdx = -1;
-    AVStream *vInStream = NULL;
-    const AVCodec *vDec = NULL;
-    AVCodecContext *video_ctx = NULL;
-    AVPacket *vPkt = NULL;
-    AVFrame *vFrame = NULL;
-    // 视频渲染相关
-    int video_width = 0; // 实际视频的宽度
-    int video_height = 0;
-    SDL_Texture *texture = NULL;
-    Uint32 pixformat = 0;
-
-    av_log_set_level(AV_LOG_DEBUG);
-
-    // 1. 判断输入参数
-    if (argc < 2)
-    {
-        av_log(NULL, AV_LOG_INFO, "参数必须大于2个！\n");
-        exit(-1);
-    }
-
-    src = argv[1];
-    is = av_malloc(sizeof(VideoState));
-    if (!is)
-    {
-        av_log(NULL, AV_LOG_ERROR, "内存不足！\n");
-        goto __END;
-    }
-
-    // 2. 初始化SDL，并创建窗口和Render
-    // 2.1
-    if (SDL_Init(SDL_INIT_VIDEO))
-    {
-        fprintf(stderr, "不能初始化 SDL - %s\n", SDL_GetError());
-        return -1;
-    }
-
-    // 2.2 creat window from SDL
-    win = SDL_CreateWindow("SCPlayer",
-                           SDL_WINDOWPOS_UNDEFINED,
-                           SDL_WINDOWPOS_UNDEFINED,
-                           w_width, w_height,
-                           SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-    if (!win)
-    {
-        fprintf(stderr, "创建SDL窗口失败, %s\n", SDL_GetError());
-        goto __END;
-    }
-    renderer = SDL_CreateRenderer(win, -1, 0);
-
-    // 3. 打开多媒体文件，并获得流信息
-    if ((ret = avformat_open_input(&fmtCtx, src, NULL, NULL)) < 0)
-    {
-        av_log(NULL, AV_LOG_ERROR, "%s\n", av_err2str(ret));
-        goto __END;
-    }
-
-    if ((ret = avformat_find_stream_info(fmtCtx, NULL)) < 0)
-    {
-        av_log(NULL, AV_LOG_ERROR, "%s\n", av_err2str(ret));
-        goto __END;
-    }
-
-    // 4. 输入的流头中找到音视频流id
-    for (int i = 0; i < fmtCtx->nb_streams; i++)
-    {
-        if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
-            vIdx < 0)
-        {
-            vIdx = i;
-        }
-
-        if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
-            aIdx < 0)
-        {
-            aIdx = i;
-        }
-
-        if (vIdx > -1 && aIdx > -1)
-        {
-            break;
-        }
-    }
-
-    if (vIdx == -1)
-    {
-        av_log(NULL, AV_LOG_ERROR, "多媒体中没有找到视频流!\n");
-        goto __END;
-    }
-
-    if (aIdx == -1)
-    {
-        av_log(NULL, AV_LOG_ERROR, "多媒体中没有找到音频流!\n");
-        goto __END;
-    }
-
-   
-    // 9. 根据视频的宽/高创建纹理
-    video_width = video_ctx->width;
-    video_height = video_ctx->height;
-    pixformat = SDL_PIXELFORMAT_IYUV;
-    texture = SDL_CreateTexture(renderer,
-                                pixformat,
-                                SDL_TEXTUREACCESS_STREAMING,
-                                video_width,
-                                video_height);
-
-    /*
-      音频解码初始化
-    */
-    // 5. 根据流中的codec_id, 获得解码器
-    aInStream = fmtCtx->streams[aIdx];
-    aDec = avcodec_find_decoder(aInStream->codecpar->codec_id);
-    if (!vDec)
-    {
-        av_log(NULL, AV_LOG_ERROR, "Could not find aac Codec");
-        goto __END;
-    }
-    // 6. 创建解码器上下文
-    audio_ctx = avcodec_alloc_context3(aDec);
-    if (!audio_ctx)
-    {
-        av_log(NULL, AV_LOG_ERROR, "内存不足\n");
-        goto __END;
-    }
-    // 7. 从视频流中拷贝解码器参数到解码器上文中
-    ret = avcodec_parameters_to_context(audio_ctx, aInStream->codecpar);
-    if (ret < 0)
-    {
-        av_log(audio_ctx, AV_LOG_ERROR, "不能拷贝解码参数到音频解码环境中!\n");
-        goto __END;
-    }
-    // 8. 绑定解码器上下文
-    ret = avcodec_open2(audio_ctx, aDec, NULL);
-    if (ret < 0)
-    {
-        av_log(video_ctx, AV_LOG_ERROR, "打开音频解码器失败: %s \n", av_err2str(ret));
-        goto __END;
-    }
-    
-
-    SDL_PauseAudio(0); // 开始播放
-
-    pkt = av_packet_alloc();
-    /*
-      VideoState 初始化
-     */
-    // 视频
-    vFrame = av_frame_alloc();
-    vPkt = av_packet_alloc();
-    is->texture = texture;
-    is->video_ctx = video_ctx;
-    // is->vPkt = vPkt;
-    // is->vFrame = vFrame;
-    // 音频
-    audio_frame = av_frame_alloc();
-    aPkt = av_packet_alloc();
-    is->audio_ctx = audio_ctx;
-    // is->aPkt = aPkt;
-    // is->audio_frame = audio_frame;
-    packet_queue_init(&is->audioq);
-
-    // 10. 从多媒体文件中读取数据，进行解码
-    while (av_read_frame(fmtCtx, pkt) >= 0)
-    {
-        if (pkt->stream_index == vIdx)
-        {
-            // av_packet_move_ref(is->vPkt, pkt);
-            // 11. 对解码后的视频帧进行渲染
-            decode(is);
-        }
-        else if (pkt->stream_index == aIdx)
-        {
-            packet_queue_put(&is->audioq, pkt); // 把音频的数据包保存到queue中
-        }
-        else
-        {
-            av_packet_free(&pkt); // 没有用的就丢弃
-        }
-
-        // 12. SDL 事件监听
-        SDL_PollEvent(&event); // SDL配套使用 不然不会渲染
-        switch (event.type)
-        {
-        case SDL_QUIT:
-            goto __QUIT;
-            break;
-        default:
-            break;
-        }
-        av_packet_unref(pkt);
-    }
-
-    // is->vPkt = NULL;
-    decode(is);
-
-__QUIT:
-    ret = 0;
-
-__END:
-    // 13. 收尾，释放资源
-
-    if (pkt)
-    {
-        av_packet_free(&pkt);
-    }
-    // 音频
-    if (audio_frame)
-    {
-        av_frame_free(&audio_frame);
-    }
-    if (aPkt)
-    {
-        av_packet_free(&aPkt);
-    }
-    if (audio_ctx)
-    {
-        avcodec_free_context(&audio_ctx);
-    }
-    // 视频
-    if (vFrame)
-    {
-        av_frame_free(&vFrame);
-    }
-    if (vPkt)
-    {
-        av_packet_free(&vPkt);
-    }
-    if (video_ctx)
-    {
-        avcodec_free_context(&video_ctx);
-    }
-
-    if (fmtCtx)
-    {
-        avformat_close_input(&fmtCtx);
-    }
-    if (win)
-    {
-        SDL_DestroyWindow(win);
-    }
-    if (renderer)
-    {
-        SDL_DestroyRenderer(renderer);
-    }
-    if (texture)
-    {
-        SDL_DestroyTexture(texture);
-    }
-    if (is)
-    {
-        av_free(is);
-    }
-
-    SDL_Quit();
-
-    return ret;
-}
 
 static int audio_open(void *opaque,
                       AVChannelLayout *wanted_channel_layout,
@@ -939,6 +608,127 @@ static int audio_open(void *opaque,
     return spec.size;
 }
 
+//推算pts 因为有时会没有pts
+double synchronize_video(VideoState *is,AVFrame *sec_frame,double pts){
+    double frame_delay;
+
+    if(pts != 0){
+        is->video_clock = pts;
+    } else {
+        //如果这一帧没有pts，说明这一帧播放的时间不确定，把之前保存的video_clock给pts
+        pts = is->video_clock;
+    }
+    frame_delay = av_q2d(is->video_ctx->time_base);
+     /* if we are repeating a frame, adjust clock accordingly 
+     重复帧用于平滑视频播放，并调整帧率
+     重复帧（repeat_pict）是一个表示当前帧需要重复显示的次数的值，一般为0不重复
+     帧率平滑：通过使用半帧时间的增加量，视频解码器可以更准确地分配时间戳，
+     以平滑帧率转换。例如，从 24 FPS 转换到 30 FPS，或其他帧率转换。
+  */
+    frame_delay += sec_frame->repeat_pict * (frame_delay * 0.5);
+
+    is->video_clock += frame_delay;
+    return pts;
+}
+//保存到帧队列中
+static int queue_pitcure(VideoState *is,AVFrame *src_frame,
+                         double pts,double duration,int64_t pos){
+     Frame *vp;
+     if(!(vp = frame_queue_peek_writable(&is->pictq)))
+         return -1;                       
+     
+     vp->sar = src_frame->sample_aspect_ratio;//SAR 表示单个像素的宽高比 SAR 为 1:1，则为方形像素
+
+     vp->width = src_frame->width;   //帧的宽
+     vp->height = src_frame->height; //帧的高
+     vp->format = src_frame->format; //像素格式 YUV420P、RGB24
+
+     vp->pts = pts;
+     vp->duration = duration;
+     vp->pos = pos;
+
+    /*
+    void av_frame_move_ref(AVFrame *dst, AVFrame *src) 
+    是 FFmpeg 库中用于在两个 AVFrame 结构体之间移动引用数据的函数。
+    这意味着将源帧 (src) 的数据和引用移动到目标帧 (dst)，同时清空源帧的数据。
+    这在处理视频和音频帧时非常有用，因为它可以有效地管理和转移帧数据，而无需进行数据的深度复制。
+     */ 
+     av_frame_move_ref(vp->frame,src_frame);//保持视频帧数据
+     frame_queue_push(&is->pictq);
+     return 0;
+}
+
+int video_decode_thread(void *arg){
+    int ret = -1;
+    
+    double pts;
+    double duration;
+
+    VideoState *is = (VideoState *)arg;
+    AVFrame *video_frame = NULL;
+    Frame *vp = NULL;
+
+    AVRational tb = is->video_st->time_base;
+    AVRational frame_rate = av_guess_frame_rate(is->ic,is->video_st,NULL);//猜测视频流或帧的帧率（Frame Rate）
+
+    video_frame = av_frame_alloc();
+
+    for(;;){
+        if(is->quit){
+            break;
+        }
+        //以非阻塞的方式从队列中获取包，如果没有就直接返回，并且等待10ms在取,直到读取取
+        ret = packet_queue_get(&is->videoq,&is->video_pkt,0);
+        if(ret <= 0){
+            av_log(is->video_ctx,AV_LOG_DEBUG,"video delay 10 ms\n");
+            SDL_Delay(10);
+            continue;
+        }
+        //发送视频包给解码器
+        ret = avcodec_send_packet(is->video_ctx,&is->video_pkt);
+        if(ret < 0){
+            av_log(is->video_ctx,AV_LOG_DEBUG,"发送视频包给解码器失败！\n");
+            goto __ERROR;
+        }
+         
+        //轮询解码结果
+        while(ret >= 0){
+             ret = avcodec_receive_frame(is->video_ctx,video_frame);
+             if(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF){
+                break;//已经度到文件尾
+             } else if ( ret < 0){
+                av_log(is->video_ctx,AV_LOG_ERROR,"从解码器接受视频帧失败！\n");
+                ret = -1;
+                goto __ERROR;
+             }
+
+             
+             /*
+              音视频同步相关
+             */
+             //视频帧持续的时间
+             duration = (frame_rate.num && frame_rate.den ? 
+                         av_q2d((AVRational){frame_rate.den,frame_rate.num}) : 0);
+             //视频帧的呈现的时间，这里是以秒为单位的时间
+             pts = (video_frame->pts == AV_NOPTS_VALUE) ? NAN : video_frame->pts * av_q2d(tb);   
+             pts = synchronize_video(is,video_frame,pts);//计算video clock 视频的播放时长，当前的video_clock + 1/tbr(帧率)
+
+             /*
+              insert FrameQueue kt_pos: 这是一个 64 位的整数，
+               用于表示帧在原始输入文件中的字节偏移量，
+               它通常对应于该帧所在的压缩数据包（AVPacket）的文件位置
+             */
+             //保存视频帧到queue中
+             queue_pitcure(is,video_frame,pts,duration,video_frame->pkt_pos);
+             av_frame_unref(video_frame);
+        }
+    }
+
+  ret = 0;  
+__ERROR:
+  av_frame_free(&video_frame);
+  return ret;
+}
 
 int stream_component_open(VideoState *is,int stream_index){
     
@@ -1012,7 +802,15 @@ int stream_component_open(VideoState *is,int stream_index){
          SDL_PauseAudio(0);
         break;
     case AVMEDIA_TYPE_VIDEO:
-        /* code */
+        is->video_index = stream_index;
+        is->video_st = st;
+        is->video_ctx = avctx;
+
+        is->frame_timer = (double)av_gettime() / ch_µs_to_s;//第一帧视频播放的时刻，加一个delay就是第二帧，加第二哥delay就是下一帧，以此类推
+        is->frame_last_delay = 40e-3;//上一次渲染delay时间
+        is->video_current_pts_time = av_gettime();//当前pts的系统时间
+
+        is->decode_tid = SDL_CreateThread(video_decode_thread,"video_decode_thread",is);
         break;
     case AVMEDIA_TYPE_UNKNOWN:
        av_log(avctx,AV_LOG_ERROR,"Other media type unknow - media_type = %d\n",avctx->codec_type); 
@@ -1021,9 +819,6 @@ int stream_component_open(VideoState *is,int stream_index){
         av_log(avctx,AV_LOG_INFO,"Other media type - media_type = %d\n",avctx->codec_type);  
         break;
     }
-
-
-
 
   ret =0;
   goto __END;
@@ -1065,28 +860,29 @@ static void calculate_display_rect(SDL_Rect *rect,
                                     AVRational pic_sar){
     //  pic_sar.num = 4,pic_sar.den = 3;
     AVRational aspect_ratio = pic_sar;
-    int64_t width,height,x,y;
-    // aspect_ratio 无效（小于等于 0:1），则将其设置为 1:1（即像素为正方形）。                                    
-    if(av_cmp_q(aspect_ratio,av_make_q(0,1)) <= 0)
-       aspect_ratio = av_make_q(1,1);
+    int64_t width, height, x, y;
+   // aspect_ratio 无效（小于等于 0:1），则将其设置为 1:1（即像素为正方形）。
+    if (av_cmp_q(aspect_ratio, av_make_q(0, 1)) <= 0)
+        aspect_ratio = av_make_q(1, 1);
+
     /*
       假设一个视频帧的宽度为 720 像素，高度为 480 像素，SAR（或 PAR）为 4:3。
                                    
                                     宽度            720      4
        视频帧的宽高比（DAR）为：DAR = ------- × SAR = ------ x --- = 2
                                     高度            480      3
-     */   
-    aspect_ratio = av_mul_q(aspect_ratio,av_make_q(pic_width,pic_height));
-     /* XXX: we suppose the screen has a 1.0 pixel ratio */
+     */
+    aspect_ratio = av_mul_q(aspect_ratio, av_make_q(pic_width, pic_height));
+
+    /* XXX: we suppose the screen has a 1.0 pixel ratio */
     /*
     高度添满
     查看宽度释放适合
     */
     height = scr_height;
-    //av_rescale(int64_t a, int64_t b, int64_t c) a * b / c
-    width = av_rescale(height,aspect_ratio.num,aspect_ratio.den) & ~1;
-    if(width > scr_height){
-       width = screen_width;
+    width = av_rescale(height, aspect_ratio.num, aspect_ratio.den) & ~1;//av_rescale(int64_t a, int64_t b, int64_t c) a * b / c
+    if (width > scr_width) {
+        width = scr_width;
         /*
         1.“~1” 是对整数 1 进行按位取反操作。在 32 位整数表示中，
         2.“1” 表示为 00000000 00000000 00000000 00000001，
@@ -1103,8 +899,11 @@ static void calculate_display_rect(SDL_Rect *rect,
            11110000010 = 1922  
          5.原数的最低位变成了 0，即 1923 被转换为 1922，确保了结果是偶数,设备显示需要  
         */
-       height = av_rescale(width,aspect_ratio.den, aspect_ratio.num) & ~1;
-    }   
+        height = av_rescale(width, aspect_ratio.den, aspect_ratio.num) & ~1;
+    }
+
+    printf("sar = %d/%d,aspect_ratio = %d/%d,d_width/d_height = %d/%d pic_w/pic_h = %d/%d \n",
+    pic_sar.num,pic_sar.den,aspect_ratio.num,aspect_ratio.den,(int)width,(int)height,pic_width,pic_height);  
    
    //计算frame x y
    x = (scr_width - width) / 2;
@@ -1199,7 +998,7 @@ int read_thread(void *arg){
 
      //打开视频流    
     stream_component_open(is, video_index);
-  }
+   }
 
   //读取多媒体包保存在pkt queue中
   for(;;){
@@ -1237,7 +1036,7 @@ int read_thread(void *arg){
         }else{
             av_packet_unref(pkt);              //取他类型的包丢弃
         }
-  }
+    }
 
   /* all done - wait for it 如果读取完了 等待100ms*/
    while (!is->quit){
@@ -1259,10 +1058,55 @@ __ERROR:
   return ret;
 }
 
-static void stream_close(VideoState *is){
+static void stream_component_close(VideoState *is, int stream_index){
+  AVFormatContext *ic = is->ic;
+  AVCodecParameters *codecpar;
 
+  if (stream_index < 0 || stream_index >= ic->nb_streams)
+      return;
+  codecpar = ic->streams[stream_index]->codecpar;
+
+  switch (codecpar->codec_type) {
+  case AVMEDIA_TYPE_AUDIO:
+      SDL_CloseAudio();
+      swr_free(&is->audio_swr_ctx);
+      av_freep(&is->audio_buf);
+      is->audio_buf = NULL;
+
+      break;
+  case AVMEDIA_TYPE_VIDEO:
+    frame_queue_abort(&is->pictq);
+    frame_queue_signal(&is->pictq); //可以确保所有等待的线程都被唤醒
+    SDL_WaitThread(is->decode_tid, NULL);
+    is->decode_tid = NULL;
+      break;
+  default:
+      break;
+  }
 }
 
+static void stream_close(VideoState *is){
+    SDL_WaitThread(is->read_tid, NULL);
+
+    /* close each stream */
+    if (is->audio_index >= 0)
+        stream_component_close(is, is->audio_index);
+    if (is->video_index >= 0)
+        stream_component_close(is, is->video_index);
+
+    avformat_close_input(&is->ic);
+
+    packet_queue_destroy(&is->videoq);
+    packet_queue_destroy(&is->audioq);
+
+    frame_queue_destory(&is->pictq);
+
+    av_free(is->filename);
+    if(is->texture)
+        SDL_DestroyTexture(is->texture);
+    av_free(is);
+}
+//添加定时事件
 static Uint32 sdl_refresh_timer_cb(Uint32 interval,void *opaque){
     SDL_Event event;
     event.type = FF_REFRESH_EVENT;
@@ -1273,6 +1117,7 @@ static Uint32 sdl_refresh_timer_cb(Uint32 interval,void *opaque){
 static void schedule_refresh(VideoState *is,int delay){
     SDL_AddTimer(delay,sdl_refresh_timer_cb,is);
 }
+
 static VideoState *stream_open(const char* filename){
 
     VideoState *is;
@@ -1317,11 +1162,211 @@ __ERROR:
   stream_close(is);
   return NULL;
 }
+//音频的clock
+double get_audio_clock(VideoState *is){
+    double pts;
+    int hw_buf_size,bytes_per_sec,n;
+
+    pts = is->audio_clock;/* maintained in the audio thread 在音频线程中维护*/
+    hw_buf_size = is->audio_buf_size - is->audio_buf_index;// 当前缓冲区数据还剩余的
+    bytes_per_sec = 0;
+    n = is->audio_ctx->ch_layout.nb_channels * 2;//每个音频样本占用2个字节（通常是16位，等于2字节）。
+    if(is->audio_st){
+        bytes_per_sec = is->audio_ctx->sample_rate * n;//44100 * 4;采样率 x 字节数 = 每秒的字节数
+    }
+    if(bytes_per_sec){
+        //当前剩余的pts
+        pts -= (double)hw_buf_size / bytes_per_sec;//时间pts = 缓冲的bytes/(每秒多少bytes)
+    }
+    return pts;
+}
+//视频的clock
+double get_video_clock(VideoState *is){
+    double delta;
+
+    delta = av_gettime() - is->video_current_pts_time;
+    delta = delta/ch_µs_to_s;
+    return is->video_current_pts_time + delta;
+}
+//系统时间 外界对其时间
+double get_external_clock(){
+    return av_gettime()/ch_µs_to_s;
+}
+
+double get_maste_clock(VideoState *is){
+    if(is->av_sync_type == AV_SYNC_AUDIO_MASTER){
+        return get_audio_clock(is);
+    } else if(is->av_sync_type == AV_SYNC_VIDEO_MASTER){
+        return get_video_clock(is);
+    } else {
+        return get_external_clock();
+    }
+}
+
+static int video_open(VideoState *is){
+    int w,h;
+
+    w = screen_width ? screen_width : default_width;
+    h = screen_height ? screen_height : default_height;
+    
+    if(!window_title)
+        window_title = input_filename;
+    SDL_SetWindowTitle(win,window_title);  
+    
+    SDL_SetWindowSize(win,w,h);
+    SDL_SetWindowPosition(win,screen_left,screen_top);  
+    if(is_full_screen)
+        SDL_SetWindowFullscreen(win,SDL_WINDOW_FULLSCREEN_DESKTOP);
+    SDL_ShowWindow(win);
+
+    is->width = w;
+    is->height = h;
+   
+    return 0;
+}
 
 
 
+static void video_display(VideoState *is){
+      Frame *vp = NULL;
+      AVFrame *frame = NULL;
 
+      SDL_Rect rect;
+      if(!is->width)
+           video_open(is);
+
+      vp = frame_queue_peek(&is->pictq);
+      frame = vp->frame;
+
+      if(!is->texture){
+        int width = frame->width;
+        int height = frame->height;
+        Uint32 pixformat = SDL_PIXELFORMAT_IYUV;
+        is->texture = SDL_CreateTexture(renderer,pixformat,
+                                        SDL_TEXTUREACCESS_STREAMING,
+                                        width,height);
+        if(!is->texture){
+            av_log(NULL,AV_LOG_ERROR,"创建纹理失败，没有内存！\n");
+            return;
+        }                                
+      }
+
+      calculate_display_rect(&rect,
+                            is->xleft,is->ytop,
+                            is->width,is->height,
+                            vp->width,vp->height,
+                            vp->sar);
+
+      SDL_UpdateYUVTexture(is->texture,NULL,
+                        frame->data[0],frame->linesize[0],
+                        frame->data[1],frame->linesize[1],
+                        frame->data[2],frame->linesize[2]);                      
+
+      SDL_RenderClear(renderer);
+      SDL_RenderCopy(renderer,is->texture,NULL,&rect);
+      SDL_RenderPresent(renderer);
+
+      fream_queue_pop(&is->pictq);      
+}
+
+//刷新视频帧 
 void video_refresh_timer(void *userdata){
+
+    VideoState *is = (VideoState*)userdata;
+    Frame *vp = NULL;
+
+    double actual_delay,delay,sync_threshold,ref_clock,diff;
+
+    if(is->video_st){
+       
+        if(is->pictq.size == 0){
+            /*
+            if the queue is empty, so we shoud be as fast as checking queue of picture
+            如果视频queue是空的，延时1毫秒 快速的检测
+            */
+            schedule_refresh(is,1);
+        } else {
+            /*
+             计算下一帧的显示时间
+            */
+            
+            vp = frame_queue_peek(&is->pictq);//队列中取到要渲染的frame 生产 > 消费，一般都可以读取到帧
+            is->video_current_pts = vp->pts;//对is的域赋值，当前video的pts
+            is->video_current_pts_time = av_gettime();//当前视频帧显示时间
+
+            if(is->frame_last_pts == 0){//一开始时 frame_last_pts 是为 0
+                delay = 0;
+            } else {
+                //视频帧的时间间隔和下一帧。当前的pts - 上一帧的pts
+                delay = vp->pts - is->frame_last_pts;
+            }
+
+            if(delay <= 0 || delay >= 1.0){
+                delay = is->frame_last_delay;
+            }
+
+            //计算完成，跟新frame_last_delay，frame_last_pts
+            is->frame_last_delay = delay;
+            is->frame_last_pts = vp->pts;
+
+            //推算下一帧视频时间和音频同步，计算delay来同步
+            if(is->av_sync_type == AV_SYNC_AUDIO_MASTER){
+               ref_clock = get_maste_clock(is);
+               diff = vp->pts - ref_clock;//视频时间下一帧的 - 音频时间
+            }
+
+          /* Skip or repeat the frame. Take delay into account
+          FFPlay still doesn't "know if this is the best guess."
+          
+                sync_threshold   视频当前帧和下一帧的时间比较  视频自己的delay
+                          diff   是视频时间和音频时间比较     视频和音频
+          
+           视频时间 - 音频audio_clock的时间     当前的pts - 上一帧的pts，
+           vp->pts - ref_clock               vp->pts - is->frame_last_pts
+                  |                                  |
+                diff                               delay
+
+            ---------------- 0 ---------------> x
+              -3      -1           1       3
+             diff   delay        delay   diff
+
+             以diff为准来修正delay
+           */
+            sync_threshold = (delay > 0.01) ? delay : 0.01;
+            if(fabs(diff) < 10.0){//在 10 ms内认为同步
+                if(diff <= - sync_threshold){
+                    delay = 0;
+                }else if(diff >= sync_threshold){//视频播放到前面要等待
+                    delay = 2*delay;
+                }
+            }
+
+
+            is->frame_timer += delay;//推算出下一帧的显示时间点,这个是和系统时间维护的一个时间
+            /* computer the REAL delay 
+             一帧确定好系统时间后，后面就将要播放的帧的时间换算成系统时间，
+              如果发现要播放的帧的时间落后于系统时间就将其播放出来。  
+            */
+            //查看这一帧是不是要显示，对比推算的时间和当前时间，如果推算的时间等于当前时间，立刻马上显示
+            actual_delay = is->frame_timer - (av_gettime()/ch_µs_to_s);
+            if(actual_delay < 0.010){
+                actual_delay = 0.010;
+            }
+
+            //到下个时间点刷新
+            schedule_refresh(is,(int)(actual_delay * 1000 + 0.5));
+            
+            printf("schedule_refresh_time= %dms\n",(int)(actual_delay * 1000 + 0.5));
+          
+           /* show the picture!
+           下一帧的时间间隔计算结束
+           展示当前帧
+           */
+           video_display(is);
+        }
+    } else {
+        schedule_refresh(is,100);//等待打开视频流
+    }
 
 }
 
@@ -1355,6 +1400,24 @@ static void sdl_event_loop(VideoState *is){
         }
     }
 }
+
+/*
+1. 判断输入参数
+2. 初始化SDL，并创建窗口和Render
+2.1
+2.2 creat window from SDL
+3. 打开多媒体文件，并获得流信息
+4. 查找最好的视频流
+5. 根据流中的codec_id, 获得解码器
+6. 创建解码器上下文
+7. 从视频流中拷贝解码器参数到解码器上文中
+8. 绑定解码器上下文
+9. 根据视频的宽/高创建纹理
+10. 从多媒体文件中读取数据，进行解码
+11. 对解码后的视频帧进行渲染
+12. 处理SDL事件
+13. 收尾，释放资源
+*/
 
 int main(int argc,char* argv[]){
     int ret  = 0;

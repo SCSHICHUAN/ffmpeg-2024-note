@@ -370,7 +370,7 @@ double get_master_clock(VideoState *is) {
   }
 }
 
-//计算video_clock
+//推算pts 因为有时会没有pts
 double synchronize_video(VideoState *is, AVFrame *src_frame, double pts) {
 
   double frame_delay;
@@ -859,7 +859,7 @@ static int queue_picture(VideoState *is,
     return 0;
 }
 
-int decode_thread(void *arg) {
+int video_decode_thread(void *arg) {
 
   int ret = -1;
 
@@ -1031,7 +1031,7 @@ int stream_component_open(VideoState *is, int stream_index) {
     is->video_current_pts_time = av_gettime();//当前pts的系统时间
 
     //create decode thread 创建视频的解码线程
-    is->decode_tid = SDL_CreateThread(decode_thread, "decodec_thread", is);
+    is->decode_tid = SDL_CreateThread(video_decode_thread, "video_decode_thread", is);
    
     break;
   default:
