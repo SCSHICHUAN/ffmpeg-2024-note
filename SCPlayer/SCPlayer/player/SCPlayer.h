@@ -10,7 +10,12 @@
 #define SCPlayer_h
 
 #include <stdio.h>
+#include <libavformat/avformat.h>
 
-int scplayer(void);
+// 定义一个函数指针类型
+typedef int (*frame_call_bacl)(AVFrame *, int);
+
+
+int scplayer(frame_call_bacl fn);
 
 #endif /* SCPlayer_h */

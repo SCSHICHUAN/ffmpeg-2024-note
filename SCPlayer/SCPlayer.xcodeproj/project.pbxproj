@@ -40,7 +40,23 @@
 		F69122FA2B47E88800973F18 /* vertex.glsl in Resources */ = {isa = PBXBuildFile; fileRef = F69122F82B47E88800973F18 /* vertex.glsl */; };
 		F69122FB2B47E88800973F18 /* yuv_fragment.glsl in Resources */ = {isa = PBXBuildFile; fileRef = F69122F92B47E88800973F18 /* yuv_fragment.glsl */; };
 		F69FEC8E2C3BEB7B00ACFC92 /* SCPlayer.c in Sources */ = {isa = PBXBuildFile; fileRef = F69FEC8D2C3BEB7B00ACFC92 /* SCPlayer.c */; };
+		F69FECDF2C3D10EE00ACFC92 /* SDL2.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F69FEC972C3D07C500ACFC92 /* SDL2.framework */; };
+		F69FECE02C3D10EE00ACFC92 /* SDL2.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F69FEC972C3D07C500ACFC92 /* SDL2.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		F69FECE12C3D10EE00ACFC92 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				F69FECE02C3D10EE00ACFC92 /* SDL2.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		8B076F56228FE85200ACCD47 /* SCFFmpeg.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SCFFmpeg.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -89,6 +105,7 @@
 		F69FEC8C2C3BEB7B00ACFC92 /* SCPlayer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SCPlayer.h; sourceTree = "<group>"; };
 		F69FEC8D2C3BEB7B00ACFC92 /* SCPlayer.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SCPlayer.c; sourceTree = "<group>"; };
 		F69FEC962C3CEE2F00ACFC92 /* SCSDL.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SCSDL.h; sourceTree = "<group>"; };
+		F69FEC972C3D07C500ACFC92 /* SDL2.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = SDL2.framework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -103,6 +120,7 @@
 				8B076F95228FECB200ACCD47 /* libswresample.a in Frameworks */,
 				8B076F96228FECB200ACCD47 /* libavcodec.a in Frameworks */,
 				8B076F97228FECB200ACCD47 /* libavfilter.a in Frameworks */,
+				F69FECDF2C3D10EE00ACFC92 /* SDL2.framework in Frameworks */,
 				8B076F81228FE9A400ACCD47 /* CoreGraphics.framework in Frameworks */,
 				8B076F85228FE9A400ACCD47 /* libz.tbd in Frameworks */,
 				8B076F87228FE9A400ACCD47 /* VideoToolbox.framework in Frameworks */,
@@ -278,6 +296,7 @@
 		F69FEC952C3CE19D00ACFC92 /* libs */ = {
 			isa = PBXGroup;
 			children = (
+				F69FEC972C3D07C500ACFC92 /* SDL2.framework */,
 				F68807FA2B58394800BC579B /* jpeg */,
 				8B076F6F228FE8D700ACCD47 /* ffmpeglib */,
 			);
@@ -294,6 +313,7 @@
 				8B076F52228FE85200ACCD47 /* Sources */,
 				8B076F53228FE85200ACCD47 /* Frameworks */,
 				8B076F54228FE85200ACCD47 /* Resources */,
+				F69FECE12C3D10EE00ACFC92 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -509,6 +529,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = C4HH236MR9;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/SCPlayer/libs",
+				);
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/SCPlayer/libs/ffmpeglib/include",
 					"$(PROJECT_DIR)/SCPlayer",
@@ -537,6 +561,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = C4HH236MR9;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/SCPlayer/libs",
+				);
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/SCPlayer/libs/ffmpeglib/include",
 					"$(PROJECT_DIR)/SCPlayer",

@@ -13,6 +13,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 /// 定义 SDL 调用约定宏
 #ifndef SDLCALL
@@ -163,5 +164,12 @@ extern int usleep(useconds_t usec);
 extern DECLSPEC void SDLCALL SDL_Delay(Uint32 ms) {
     usleep(ms * 1000); // 将毫秒转换为微秒
 }
+
+
+
+
+
+
+
 
 #endif /* SCSDL_h */

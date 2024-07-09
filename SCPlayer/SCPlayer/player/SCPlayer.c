@@ -7,6 +7,8 @@
 //
 
 #include "SCPlayer.h"
+
+
 /*
 Create by stan 2024-6-30
 */
@@ -31,7 +33,7 @@ Create by stan 2024-6-30
 四.音视频同步 ---线程1中 主线程
  */
 
-#include "SCSDL.h"
+#include <SDL2/SDL.h>
 #include <libavutil/avutil.h>
 #include <libavutil/fifo.h>
 #include <libavutil/time.h>
@@ -40,9 +42,10 @@ Create by stan 2024-6-30
 #include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
 
+
 //sdl
-#define FF_REFRESH_EVENT (SDL_USEREVENT)
-#define FF_QUIT_EVENT (SDL_USEREVENT + 1)
+#define FF_REFRESH_EVENT (100)
+#define FF_QUIT_EVENT (100 + 1)
 
 #define MAX_QUEUE_SIZE (5 * 1024 * 1024)
 #define AUDIO_BUFFER_SIZE 1024
@@ -66,11 +69,11 @@ static int default_height = 720; //期望显示的高
 static int screen_width  = 0;
 static int screen_height = 0;
 
-//static SDL_Window      *win;
-//static SDL_Renderer    *renderer;
+static SDL_Window      *win;
+static SDL_Renderer    *renderer;
 static int is_full_screen = 0;
-//static int screen_left = SDL_WINDOWPOS_CENTERED;
-//static int screen_top = SDL_WINDOWPOS_CENTERED;
+static int screen_left = SDL_WINDOWPOS_CENTERED;
+static int screen_top = SDL_WINDOWPOS_CENTERED;
 
 
 
@@ -86,8 +89,8 @@ static int av_sync_type = AV_SYNC_AUDIO_MASTER;
 static int w_width = 720;
 static int w_height = 480;
 
-//static SDL_Window *win = NULL;
-//static SDL_Renderer *renderer = NULL;
+static SDL_Window *win = NULL;
+static SDL_Renderer *renderer = NULL;
 
 typedef struct MyPacketEle
 {
@@ -166,7 +169,7 @@ typedef struct VideoState{
     PacketQueue     videoq;     //视频包的queue
     AVPacket        video_pkt;  //视频pkt
     struct SwsContext *sws_ctx; //视频重采样
-//    SDL_Texture     *texture;   //纹理
+    SDL_Texture     *texture;   //纹理
     FrameQueue      pictq;      //储存解码后的视频帧
     int width, height, xleft, ytop;//视频在SDL窗口位置和大小
   
@@ -174,6 +177,9 @@ typedef struct VideoState{
     SDL_Thread      *read_tid;  //读取数据线程
     SDL_Thread      *decode_tid;//解码线程
     int             quit;
+    
+    //回调
+    frame_call_bacl fn;
 }VideoState;
 
 /*
@@ -322,11 +328,11 @@ static int frame_queue_init(FrameQueue *fq,int max_size){
      初始化线程标志
      */
     if(!(fq->mutex = SDL_CreateMutex())){
-        av_log(NULL,AV_LOG_FATAL,"SDL_CreateMutex(): \n");
+        av_log(NULL,AV_LOG_FATAL,"SDL_CreateMutex(): %s\n",SDL_GetError());
         return AVERROR(ENOMEM);
     }
     if(!(fq->cond = SDL_CreateCond())){
-        av_log(NULL,AV_LOG_FATAL,"SDL_CreateCond(): \n");
+        av_log(NULL,AV_LOG_FATAL,"SDL_CreateCond(): %s\n",SDL_GetError());
         return AVERROR(ENOMEM);
     }
     /*
@@ -340,7 +346,7 @@ static int frame_queue_init(FrameQueue *fq,int max_size){
 }
 //销毁Frame queue
 static void frame_queue_destory(FrameQueue *fq){
-    int i;
+    
     for(int i = 0; i < VIDEO_PICTURE_QUEUE_SIZE; i++){
         Frame *vp = &fq->queue[i];
         //释放 AVFrame 结构中引用的所有数据（如内部缓冲区）
@@ -426,7 +432,7 @@ static void fream_queue_pop(FrameQueue *fq){
 
 static int audio_decode_frame(VideoState *is)
 {
-    int ret;
+    int ret = -1;
     int len2;
     int data_size = 0;
     // AVPacket pkt;
@@ -541,7 +547,7 @@ __OUT:
   len 声卡需要的音频长度
   实际可能不能给len
  */
-static void sdl_audio_callback(void *userdata, uint8_t *stream, int len)
+static void sdl_audio_callback(void *userdata, Uint8 *stream, int len)
 {
     int len1 = 0;
     int audio_size = 0;
@@ -589,33 +595,32 @@ static int audio_open(void *opaque,
                       AVChannelLayout *wanted_channel_layout,
                       int wented_salple_rate){
 
-//    /*SDL_OpenAudio需要传入两个参数，一个是我们想要的音频格式。一个是最后实际的音频格式。
-//     这里的SDL_AudioSpec，是SDL中记录音频格式的结构体。
-//     &spec 告诉调用者实际的参数
-//     */
-//    SDL_AudioSpec wanted_spec, spec;
-//    int wanted_nb_channels = wanted_channel_layout->nb_channels;
-//    /*9.初始化音频设备参数
-//      为音频设备设置参数
-//    */
-//    wanted_spec.freq = wented_salple_rate; // 采样率
-//    wanted_spec.format = AUDIO_S16SYS;    // 有符号的16位
-//    wanted_spec.channels = wanted_nb_channels;
-//    wanted_spec.silence = 0;                 // 静默音
-//    wanted_spec.samples = AUDIO_BUFFER_SIZE; // 采样个数
-//    wanted_spec.callback = sdl_audio_callback;
-//    wanted_spec.userdata = (void *)opaque;
-//
-//    av_log(NULL,AV_LOG_INFO,
-//           "wanted spec: channels:%d,sample_fmt:%d,sanple_ret:%d \n",
-//           wanted_nb_channels,AUDIO_S16,wented_salple_rate);
-//
-//    if (SDL_OpenAudio(&wanted_spec, &spec) < 0){
-//        av_log(NULL, AV_LOG_ERROR, "打开音频设备失败!\n");
-//        return -1;
-//    }
-//    return spec.size;
-    return 0;
+    /*SDL_OpenAudio需要传入两个参数，一个是我们想要的音频格式。一个是最后实际的音频格式。
+     这里的SDL_AudioSpec，是SDL中记录音频格式的结构体。
+     &spec 告诉调用者实际的参数
+     */
+    SDL_AudioSpec wanted_spec, spec;
+    int wanted_nb_channels = wanted_channel_layout->nb_channels;
+    /*9.初始化音频设备参数
+      为音频设备设置参数
+    */
+    wanted_spec.freq = wented_salple_rate; // 采样率
+    wanted_spec.format = AUDIO_S16SYS;    // 有符号的16位
+    wanted_spec.channels = wanted_nb_channels;
+    wanted_spec.silence = 0;                 // 静默音
+    wanted_spec.samples = AUDIO_BUFFER_SIZE; // 采样个数
+    wanted_spec.callback = sdl_audio_callback;
+    wanted_spec.userdata = (void *)opaque;
+    
+    av_log(NULL,AV_LOG_INFO,
+           "wanted spec: channels:%d,sample_fmt:%d,sanple_ret:%d \n",
+           wanted_nb_channels,AUDIO_S16,wented_salple_rate);
+
+    if (SDL_OpenAudio(&wanted_spec, &spec) < 0){
+        av_log(NULL, AV_LOG_ERROR, "打开音频设备失败!\n");
+        return -1;
+    }
+    return spec.size;
 }
 
 //推算pts 因为有时会没有pts
@@ -668,6 +673,9 @@ static int queue_pitcure(VideoState *is,AVFrame *src_frame,
      return 0;
 }
 
+
+
+
 int video_decode_thread(void *arg){
     int ret = -1;
     
@@ -711,8 +719,6 @@ int video_decode_thread(void *arg){
                 ret = -1;
                 goto __ERROR;
              }
-
-             
              /*
               音视频同步相关
              */
@@ -799,7 +805,7 @@ int stream_component_open(VideoState *is,int stream_index){
          ret = audio_open(is,&ch_layout,sample_rate);
          if(ret < 0){
             av_log(NULL,AV_LOG_ERROR,"不能打开音频设备!\n");
-            goto __ERROR;
+           // goto __ERROR;
          }
 
          is->audio_buf_size = 0;
@@ -830,7 +836,7 @@ int stream_component_open(VideoState *is,int stream_index){
         break;
     }
 
-  ret =0;
+  ret = 0;
   goto __END;
 __ERROR:
   if(avctx){
@@ -863,82 +869,82 @@ int pic_height：视频帧的高度。
 AVRational pic_sar：视频帧的样本长宽比（SAR）。
  */
 
-//static void calculate_display_rect(SDL_Rect *rect,
-//                                    int scr_xleft,int scr_ytop,
-//                                    int scr_width,int scr_height,
-//                                    int pic_width,int pic_height,
-//                                    AVRational pic_sar){
-//    //  pic_sar.num = 4,pic_sar.den = 3;
-//    AVRational aspect_ratio = pic_sar;
-//    int64_t width, height, x, y;
-//   // aspect_ratio 无效（小于等于 0:1），则将其设置为 1:1（即像素为正方形）。
-//    if (av_cmp_q(aspect_ratio, av_make_q(0, 1)) <= 0)
-//        aspect_ratio = av_make_q(1, 1);
-//
-//    /*
-//      假设一个视频帧的宽度为 720 像素，高度为 480 像素，SAR（或 PAR）为 4:3。
-//
-//                                    宽度            720      4
-//       视频帧的宽高比（DAR）为：DAR = ------- × SAR = ------ x --- = 2
-//                                    高度            480      3
-//     */
-//    aspect_ratio = av_mul_q(aspect_ratio, av_make_q(pic_width, pic_height));
-//
-//    /* XXX: we suppose the screen has a 1.0 pixel ratio */
-//    /*
-//    高度添满
-//    查看宽度释放适合
-//    */
-//    height = scr_height;
-//    width = av_rescale(height, aspect_ratio.num, aspect_ratio.den) & ~1;//av_rescale(int64_t a, int64_t b, int64_t c) a * b / c
-//    if (width > scr_width) {
-//        width = scr_width;
-//        /*
-//        1.“~1” 是对整数 1 进行按位取反操作。在 32 位整数表示中，
-//        2.“1” 表示为 00000000 00000000 00000000 00000001，
-//        按位取反后的结果是 11111111 11111111 11111111 11111110，即 0xFFFFFFFE。
-//
-//        3.按位与操作符 & 会对两个数的每一位执行与操作，即只有当两个数的对应位都是 1 时，结果才是 1，否则为 0。
-//
-//        4.将 1923 与 0xFFFFFFFE 进行按位与操作：
-//
-//                                  11110000011
-//           & 11111111111111111111111111111110
-//          --------------------------------------
-//                                  11110000010
-//           11110000010 = 1922
-//         5.原数的最低位变成了 0，即 1923 被转换为 1922，确保了结果是偶数,设备显示需要
-//        */
-//        height = av_rescale(width, aspect_ratio.den, aspect_ratio.num) & ~1;
-//    }
-//
-//    printf("sar = %d/%d,aspect_ratio = %d/%d,d_width/d_height = %d/%d pic_w/pic_h = %d/%d \n",
-//    pic_sar.num,pic_sar.den,aspect_ratio.num,aspect_ratio.den,(int)width,(int)height,pic_width,pic_height);
-//
-//   //计算frame x y
-//   x = (scr_width - width) / 2;
-//   y = (scr_height - height) /2;
-//   rect->x = scr_xleft + x;
-//   rect->y = scr_ytop + y;
-//   //计算frame的 宽高
-//   rect->w = FFMAX((int)width,1);
-//   rect->h = FFMAX((int)height,1);
-//
-//}
+static void calculate_display_rect(SDL_Rect *rect,
+                                    int scr_xleft,int scr_ytop,
+                                    int scr_width,int scr_height,
+                                    int pic_width,int pic_height,
+                                    AVRational pic_sar){
+    //  pic_sar.num = 4,pic_sar.den = 3;
+    AVRational aspect_ratio = pic_sar;
+    int64_t width, height, x, y;
+   // aspect_ratio 无效（小于等于 0:1），则将其设置为 1:1（即像素为正方形）。
+    if (av_cmp_q(aspect_ratio, av_make_q(0, 1)) <= 0)
+        aspect_ratio = av_make_q(1, 1);
+
+    /*
+      假设一个视频帧的宽度为 720 像素，高度为 480 像素，SAR（或 PAR）为 4:3。
+                                   
+                                    宽度            720      4
+       视频帧的宽高比（DAR）为：DAR = ------- × SAR = ------ x --- = 2
+                                    高度            480      3
+     */
+    aspect_ratio = av_mul_q(aspect_ratio, av_make_q(pic_width, pic_height));
+
+    /* XXX: we suppose the screen has a 1.0 pixel ratio */
+    /*
+    高度添满
+    查看宽度释放适合
+    */
+    height = scr_height;
+    width = av_rescale(height, aspect_ratio.num, aspect_ratio.den) & ~1;//av_rescale(int64_t a, int64_t b, int64_t c) a * b / c
+    if (width > scr_width) {
+        width = scr_width;
+        /*
+        1.“~1” 是对整数 1 进行按位取反操作。在 32 位整数表示中，
+        2.“1” 表示为 00000000 00000000 00000000 00000001，
+        按位取反后的结果是 11111111 11111111 11111111 11111110，即 0xFFFFFFFE。
+
+        3.按位与操作符 & 会对两个数的每一位执行与操作，即只有当两个数的对应位都是 1 时，结果才是 1，否则为 0。
+
+        4.将 1923 与 0xFFFFFFFE 进行按位与操作：
+
+                                  11110000011
+           & 11111111111111111111111111111110
+          --------------------------------------
+                                  11110000010
+           11110000010 = 1922
+         5.原数的最低位变成了 0，即 1923 被转换为 1922，确保了结果是偶数,设备显示需要
+        */
+        height = av_rescale(width, aspect_ratio.den, aspect_ratio.num) & ~1;
+    }
+
+    printf("sar = %d/%d,aspect_ratio = %d/%d,d_width/d_height = %d/%d pic_w/pic_h = %d/%d \n",
+    pic_sar.num,pic_sar.den,aspect_ratio.num,aspect_ratio.den,(int)width,(int)height,pic_width,pic_height);
+   
+   //计算frame x y
+   x = (scr_width - width) / 2;
+   y = (scr_height - height) /2;
+   rect->x = scr_xleft + x;
+   rect->y = scr_ytop + y;
+   //计算frame的 宽高
+   rect->w = FFMAX((int)width,1);
+   rect->h = FFMAX((int)height,1);
+
+}
 
 static void set_default_window_size(int width,int height,AVRational sar){
-//    SDL_Rect rect;
-//    int max_width = screen_width ? screen_width : INT_MAX;
-//    int max_height = screen_height ? screen_height : INT_MAX;
-//    if(max_width == INT_MAX && max_height == INT_MAX)
-//       max_height = height;
-//    calculate_display_rect(&rect,0,0,max_width,max_height,width,height,sar);
-//    default_width = rect.w;
-//    default_height = rect.h;
+    SDL_Rect rect;
+    int max_width = screen_width ? screen_width : INT_MAX;
+    int max_height = screen_height ? screen_height : INT_MAX;
+    if(max_width == INT_MAX && max_height == INT_MAX)
+       max_height = height;
+    calculate_display_rect(&rect,0,0,max_width,max_height,width,height,sar);
+    default_width = rect.w;
+    default_height = rect.h;
 }
 
 int read_thread(void *arg){
-    Uint32 pixformat;
+//    Uint32 pixformat;
     int ret = -1;
     int video_index  = -1;
     int audio_index  = -1;
@@ -952,6 +958,7 @@ int read_thread(void *arg){
         av_log(NULL, AV_LOG_FATAL, "NO MEMORY!\n");
         goto __ERROR;
     }
+    
     //1. Open media file
   if((ret = avformat_open_input(&ic, is->filename, NULL, NULL)) < 0) {
     av_log(NULL, AV_LOG_ERROR, "Could not open file: %s, %d(%s)\n", is->filename, ret, av_err2str(ret));
@@ -1018,11 +1025,11 @@ int read_thread(void *arg){
         }
 
         //没有消费完循环等待10ms，queue满了
-        if(is->audioq.size > MAX_QUEUE_SIZE ||
-           is->videoq.size > MAX_QUEUE_SIZE){
-            SDL_Delay(10);
-            continue;
-           }
+//        if(is->audioq.size > MAX_QUEUE_SIZE ||
+//           is->videoq.size > MAX_QUEUE_SIZE){
+//            SDL_Delay(10);
+//            continue;
+//           }
         //从上下文中读取包
         ret = av_read_frame(is->ic,pkt);
         if(ret < 0){
@@ -1058,10 +1065,10 @@ __ERROR:
         av_packet_free(&pkt);
     }
     if(ret !=0 ){
-//    SDL_Event event;
-//    event.type = FF_QUIT_EVENT;
-//    event.user.data1 = is;
-//    SDL_PushEvent(&event);
+    SDL_Event event;
+    event.type = FF_QUIT_EVENT;
+    event.user.data1 = is;
+    SDL_PushEvent(&event);
   }
 
   return ret;
@@ -1077,7 +1084,7 @@ static void stream_component_close(VideoState *is, int stream_index){
 
   switch (codecpar->codec_type) {
   case AVMEDIA_TYPE_AUDIO:
-//      SDL_CloseAudio();
+      SDL_CloseAudio();
       swr_free(&is->audio_swr_ctx);
       av_freep(&is->audio_buf);
       is->audio_buf = NULL;
@@ -1110,21 +1117,21 @@ static void stream_close(VideoState *is){
 
     frame_queue_destory(&is->pictq);
 
-//    av_free(is->filename);
-//    if(is->texture)
-//        SDL_DestroyTexture(is->texture);
+    av_free(is->filename);
+    if(is->texture)
+        SDL_DestroyTexture(is->texture);
     av_free(is);
 }
 //添加定时事件
 static Uint32 sdl_refresh_timer_cb(Uint32 interval,void *opaque){
-//    SDL_Event event;
-//    event.type = FF_REFRESH_EVENT;
-//    event.user.data1 = opaque;
-//    SDL_PushEvent(&event);
+    SDL_Event event;
+    event.type = FF_REFRESH_EVENT;
+    event.user.data1 = opaque;
+    SDL_PushEvent(&event);
     return 0;
 }
 static void schedule_refresh(VideoState *is,int delay){
-//    SDL_AddTimer(delay,sdl_refresh_timer_cb,is);
+    SDL_AddTimer(delay,sdl_refresh_timer_cb,is);
 }
 
 static VideoState *stream_open(const char* filename){
@@ -1160,7 +1167,7 @@ static VideoState *stream_open(const char* filename){
    is->av_sync_type = av_sync_type;
    is->read_tid = SDL_CreateThread(read_thread,"read_thread",is);
    if(!is->read_tid){
-      av_log(NULL,AV_LOG_FATAL,"SDL_CreateThread():\n");
+      av_log(NULL,AV_LOG_FATAL,"SDL_CreateThread():%s\n",SDL_GetError());
       goto __ERROR;
    }
 
@@ -1220,13 +1227,13 @@ static int video_open(VideoState *is){
     
     if(!window_title)
         window_title = input_filename;
-//    SDL_SetWindowTitle(win,window_title);
-//
-//    SDL_SetWindowSize(win,w,h);
-//    SDL_SetWindowPosition(win,screen_left,screen_top);
-//    if(is_full_screen)
-//        SDL_SetWindowFullscreen(win,SDL_WINDOW_FULLSCREEN_DESKTOP);
-//    SDL_ShowWindow(win);
+    SDL_SetWindowTitle(win,window_title);
+    
+    SDL_SetWindowSize(win,w,h);
+    SDL_SetWindowPosition(win,screen_left,screen_top);
+    if(is_full_screen)
+        SDL_SetWindowFullscreen(win,SDL_WINDOW_FULLSCREEN_DESKTOP);
+    SDL_ShowWindow(win);
 
     is->width = w;
     is->height = h;
@@ -1240,7 +1247,7 @@ static void video_display(VideoState *is){
       Frame *vp = NULL;
       AVFrame *frame = NULL;
 
-//      SDL_Rect rect;
+      SDL_Rect rect;
       if(!is->width)
            video_open(is);
 
@@ -1274,7 +1281,8 @@ static void video_display(VideoState *is){
 //      SDL_RenderClear(renderer);
 //      SDL_RenderCopy(renderer,is->texture,NULL,&rect);
 //      SDL_RenderPresent(renderer);
-
+ 
+      is->fn(frame,0);
       fream_queue_pop(&is->pictq);
 }
 
@@ -1288,91 +1296,92 @@ void video_refresh_timer(void *userdata){
 
     if(is->video_st){
        
-        if(is->pictq.size == 0){
-            /*
-            if the queue is empty, so we shoud be as fast as checking queue of picture
-            如果视频queue是空的，延时1毫秒 快速的检测
-            */
-            schedule_refresh(is,1);
-        } else {
-            /*
-             计算下一帧的显示时间
-            */
-            
-            vp = frame_queue_peek(&is->pictq);//队列中取到要渲染的frame 生产 > 消费，一般都可以读取到帧
-            is->video_current_pts = vp->pts;//对is的域赋值，当前video的pts
-            is->video_current_pts_time = av_gettime();//当前视频帧显示时间
-
-            if(is->frame_last_pts == 0){//一开始时 frame_last_pts 是为 0
-                delay = 0;
-            } else {
-                //视频帧的时间间隔和下一帧。当前的pts - 上一帧的pts
-                delay = vp->pts - is->frame_last_pts;
-            }
-
-            if(delay <= 0 || delay >= 1.0){
-                delay = is->frame_last_delay;
-            }
-
-            //计算完成，跟新frame_last_delay，frame_last_pts
-            is->frame_last_delay = delay;
-            is->frame_last_pts = vp->pts;
-
-            //推算下一帧视频时间和音频同步，计算delay来同步
-            if(is->av_sync_type == AV_SYNC_AUDIO_MASTER){
-               ref_clock = get_maste_clock(is);
-               diff = vp->pts - ref_clock;//视频时间下一帧的 - 音频时间
-            }
-
-          /* Skip or repeat the frame. Take delay into account
-          FFPlay still doesn't "know if this is the best guess."
-          
-                sync_threshold   视频当前帧和下一帧的时间比较  视频自己的delay
-                          diff   是视频时间和音频时间比较     视频和音频
-          
-           视频时间 - 音频audio_clock的时间     当前的pts - 上一帧的pts，
-           vp->pts - ref_clock               vp->pts - is->frame_last_pts
-                  |                                  |
-                diff                               delay
-
-            ---------------- 0 ---------------> x
-              -3      -1           1       3
-             diff   delay        delay   diff
-
-             以diff为准来修正delay
-           */
-            sync_threshold = (delay > 0.01) ? delay : 0.01;
-            if(fabs(diff) < 10.0){//在 10 ms内认为同步
-                if(diff <= - sync_threshold){
-                    delay = 0;
-                }else if(diff >= sync_threshold){//视频播放到前面要等待
-                    delay = 2*delay;
-                }
-            }
-
-
-            is->frame_timer += delay;//推算出下一帧的显示时间点,这个是和系统时间维护的一个时间
-            /* computer the REAL delay
-             一帧确定好系统时间后，后面就将要播放的帧的时间换算成系统时间，
-              如果发现要播放的帧的时间落后于系统时间就将其播放出来。
-            */
-            //查看这一帧是不是要显示，对比推算的时间和当前时间，如果推算的时间等于当前时间，立刻马上显示
-            actual_delay = is->frame_timer - (av_gettime()/ch_µs_to_s);
-            if(actual_delay < 0.010){
-                actual_delay = 0.010;
-            }
-
-            //到下个时间点刷新
-            schedule_refresh(is,(int)(actual_delay * 1000 + 0.5));
-            
-            printf("schedule_refresh_time= %dms\n",(int)(actual_delay * 1000 + 0.5));
-          
-           /* show the picture!
-           下一帧的时间间隔计算结束
-           展示当前帧
-           */
+//        if(is->pictq.size == 0){
+//            /*
+//            if the queue is empty, so we shoud be as fast as checking queue of picture
+//            如果视频queue是空的，延时1毫秒 快速的检测
+//            */
+//            schedule_refresh(is,1);
+//        } else {
+//            /*
+//             计算下一帧的显示时间
+//            */
+//
+//            vp = frame_queue_peek(&is->pictq);//队列中取到要渲染的frame 生产 > 消费，一般都可以读取到帧
+//            is->video_current_pts = vp->pts;//对is的域赋值，当前video的pts
+//            is->video_current_pts_time = av_gettime();//当前视频帧显示时间
+//
+//            if(is->frame_last_pts == 0){//一开始时 frame_last_pts 是为 0
+//                delay = 0;
+//            } else {
+//                //视频帧的时间间隔和下一帧。当前的pts - 上一帧的pts
+//                delay = vp->pts - is->frame_last_pts;
+//            }
+//
+//            if(delay <= 0 || delay >= 1.0){
+//                delay = is->frame_last_delay;
+//            }
+//
+//            //计算完成，跟新frame_last_delay，frame_last_pts
+//            is->frame_last_delay = delay;
+//            is->frame_last_pts = vp->pts;
+//
+//            //推算下一帧视频时间和音频同步，计算delay来同步
+//            if(is->av_sync_type == AV_SYNC_AUDIO_MASTER){
+//               ref_clock = get_maste_clock(is);
+//               diff = vp->pts - ref_clock;//视频时间下一帧的 - 音频时间
+//            }
+//
+//          /* Skip or repeat the frame. Take delay into account
+//          FFPlay still doesn't "know if this is the best guess."
+//
+//                sync_threshold   视频当前帧和下一帧的时间比较  视频自己的delay
+//                          diff   是视频时间和音频时间比较     视频和音频
+//
+//           视频时间 - 音频audio_clock的时间     当前的pts - 上一帧的pts，
+//           vp->pts - ref_clock               vp->pts - is->frame_last_pts
+//                  |                                  |
+//                diff                               delay
+//
+//            ---------------- 0 ---------------> x
+//              -3      -1           1       3
+//             diff   delay        delay   diff
+//
+//             以diff为准来修正delay
+//           */
+//            sync_threshold = (delay > 0.01) ? delay : 0.01;
+//            if(fabs(diff) < 10.0){//在 10 ms内认为同步
+//                if(diff <= - sync_threshold){
+//                    delay = 0;
+//                }else if(diff >= sync_threshold){//视频播放到前面要等待
+//                    delay = 2*delay;
+//                }
+//            }
+//
+//
+//            is->frame_timer += delay;//推算出下一帧的显示时间点,这个是和系统时间维护的一个时间
+//            /* computer the REAL delay
+//             一帧确定好系统时间后，后面就将要播放的帧的时间换算成系统时间，
+//              如果发现要播放的帧的时间落后于系统时间就将其播放出来。
+//            */
+//            //查看这一帧是不是要显示，对比推算的时间和当前时间，如果推算的时间等于当前时间，立刻马上显示
+//            actual_delay = is->frame_timer - (av_gettime()/ch_µs_to_s);
+//            if(actual_delay < 0.010){
+//                actual_delay = 0.010;
+//            }
+//
+//            //到下个时间点刷新
+//            schedule_refresh(is,(int)(actual_delay * 1000 + 0.5));
+//
+//            printf("schedule_refresh_time= %dms\n",(int)(actual_delay * 1000 + 0.5));
+//
+//           /* show the picture!
+//           下一帧的时间间隔计算结束
+//           展示当前帧
+//           */
+           schedule_refresh(is,40);
            video_display(is);
-        }
+//        }
     } else {
         schedule_refresh(is,100);//等待打开视频流
     }
@@ -1383,11 +1392,11 @@ static void do_exit(VideoState *is){
     if(is){
         stream_close(is);
     }
-//    if(renderer)
-//       SDL_DestroyRenderer(renderer);
-//    if(win)
-//       SDL_DestroyWindow(win);
-//    SDL_Quit();
+    if(renderer)
+       SDL_DestroyRenderer(renderer);
+    if(win)
+       SDL_DestroyWindow(win);
+    SDL_Quit();
     av_log(NULL,AV_LOG_QUIET,"%s","");
 }
 
@@ -1408,6 +1417,15 @@ static void sdl_event_loop(VideoState *is){
 //            break;
 //        }
 //    }
+    for(;;){
+        if(is->frame_timer >= (double)av_gettime() / ch_µs_to_s){
+           
+        }
+        video_refresh_timer(is);
+    }
+    
+    
+    
 }
 
 /*
@@ -1428,21 +1446,21 @@ static void sdl_event_loop(VideoState *is){
 13. 收尾，释放资源
 */
 
-int scplayer(void){
+int scplayer(frame_call_bacl fn){
     int ret  = 0;
     int flags = 0;
     VideoState *is;
 
-    av_log_set_level(AV_LOG_DEBUG);
+    av_log_set_level(AV_LOG_INFO);
 
     input_filename = "/Users/stan/Desktop/1280x720.mp4";
 
-//    flags = SDL_INIT_AUDIO | SDL_INIT_AUDIO | SDL_INIT_TIMER;
+//    flags =  SDL_INIT_TIMER;
 //    if(SDL_Init(flags)){
 //        av_log(NULL,AV_LOG_FATAL,"不能初始化SDL - %s\n",SDL_GetError());
 //        exit(1);
 //    }
-//
+
 //    win = SDL_CreateWindow("scplayer",
 //                            SDL_WINDOWPOS_UNDEFINED,
 //                            SDL_WINDOWPOS_UNDEFINED,
@@ -1458,6 +1476,7 @@ int scplayer(void){
 //    }
 
     is = stream_open(input_filename);
+    is->fn = fn;
     if(!is){
         av_log(NULL,AV_LOG_FATAL,"初始化VideoState失败\n");
         do_exit(NULL);
