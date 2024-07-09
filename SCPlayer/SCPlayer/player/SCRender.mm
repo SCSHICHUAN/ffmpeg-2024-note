@@ -262,7 +262,7 @@ float rad = 0;
     int videoWidth = yuvFrame->width;
     int videoHeight = yuvFrame->height;
 
-    if(videoWidth <= 0 || videoHeight <= 0)
+    if(videoWidth <= 0 || videoHeight<=0)
         return;
 
     glEnable(GL_DEPTH_TEST);

@@ -104,8 +104,8 @@
 		F69122F92B47E88800973F18 /* yuv_fragment.glsl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = yuv_fragment.glsl; sourceTree = "<group>"; };
 		F69FEC8C2C3BEB7B00ACFC92 /* SCPlayer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SCPlayer.h; sourceTree = "<group>"; };
 		F69FEC8D2C3BEB7B00ACFC92 /* SCPlayer.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SCPlayer.c; sourceTree = "<group>"; };
-		F69FEC962C3CEE2F00ACFC92 /* SCSDL.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SCSDL.h; sourceTree = "<group>"; };
 		F69FEC972C3D07C500ACFC92 /* SDL2.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = SDL2.framework; sourceTree = "<group>"; };
+		F69FECE52C3D3A9D00ACFC92 /* SCSDL.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SCSDL.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -258,6 +258,7 @@
 		F69FEC922C3CE08600ACFC92 /* other */ = {
 			isa = PBXGroup;
 			children = (
+				8B076F68228FE85200ACCD47 /* main.m */,
 				F68807E02B58367200BC579B /* wood.jpg */,
 				8B076F99228FFBC200ACCD47 /* v1.mp4 */,
 				8B076F5F228FE85200ACCD47 /* Main.storyboard */,
@@ -275,7 +276,6 @@
 				8B076F5A228FE85200ACCD47 /* AppDelegate.m */,
 				8B076F5C228FE85200ACCD47 /* ViewController.h */,
 				8B076F5D228FE85200ACCD47 /* ViewController.m */,
-				8B076F68228FE85200ACCD47 /* main.m */,
 			);
 			path = occlass;
 			sourceTree = "<group>";
@@ -288,7 +288,6 @@
 				F66486FF2B57CE220017426C /* SCRender.mm */,
 				F69FEC8C2C3BEB7B00ACFC92 /* SCPlayer.h */,
 				F69FEC8D2C3BEB7B00ACFC92 /* SCPlayer.c */,
-				F69FEC962C3CEE2F00ACFC92 /* SCSDL.h */,
 			);
 			path = player;
 			sourceTree = "<group>";
@@ -296,6 +295,7 @@
 		F69FEC952C3CE19D00ACFC92 /* libs */ = {
 			isa = PBXGroup;
 			children = (
+				F69FECE52C3D3A9D00ACFC92 /* SCSDL.h */,
 				F69FEC972C3D07C500ACFC92 /* SDL2.framework */,
 				F68807FA2B58394800BC579B /* jpeg */,
 				8B076F6F228FE8D700ACCD47 /* ffmpeglib */,

@@ -14,6 +14,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 
 - (void)displayWithFrame:(AVFrame *)yuvFrame;
+@property(nonatomic,assign)float testD;
 @property(nonatomic,assign)float forward;
 @property(nonatomic,assign)float back;
 @property(nonatomic,assign)float right;

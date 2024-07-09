@@ -67,7 +67,7 @@ int when_frame_push(AVFrame *frame, int flag){
         [c_self->render displayWithFrame:frame];
     });
     
-    printf("fram.size = %d,flat = %d \n",frame->pkt_size,flag);
+//    printf("fram.size = %d,flat = %d \n",frame->pkt_size,flag);
     return 0;
 }
 
