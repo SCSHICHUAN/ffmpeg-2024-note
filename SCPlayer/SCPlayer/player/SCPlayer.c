@@ -31,16 +31,14 @@ Create by stan 2024-6-30
 四.音视频同步 ---线程1中 主线程
  */
 
-//#include <SDL2/SDL.h>
-#include <pthread.h>
-#include "jpeglib.h"
-#include "libavutil/avutil.h"
-#include "libavutil/fifo.h"
-#include "libavutil/time.h"
-#include "libavcodec/avcodec.h"
-#include "libavformat/avformat.h"
-#include "libswscale/swscale.h"
-#include "libswresample/swresample.h"
+#include "SCSDL.h"
+#include <libavutil/avutil.h>
+#include <libavutil/fifo.h>
+#include <libavutil/time.h>
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libswscale/swscale.h>
+#include <libswresample/swresample.h>
 
 //sdl
 #define FF_REFRESH_EVENT (SDL_USEREVENT)
@@ -74,67 +72,6 @@ static int is_full_screen = 0;
 //static int screen_left = SDL_WINDOWPOS_CENTERED;
 //static int screen_top = SDL_WINDOWPOS_CENTERED;
 
-
-typedef struct SDL_mutex {
-    pthread_mutex_t mutex;
-} SDL_mutex;
-
-typedef struct SDL_cond {
-    pthread_cond_t cond;
-} SDL_cond;
-
-// 初始化互斥锁
-SDL_mutex* SDL_CreateMutex(SDL_mutex *mutex) {
-    return pthread_mutex_init(&mutex->mutex, NULL);
-}
-
-// 销毁互斥锁
-void SDL_DestroyMutex(SDL_mutex *mutex) {
-    pthread_mutex_destroy(&mutex->mutex);
-}
-
-// 加锁
-int SDL_LockMutex(SDL_mutex *mutex) {
-    return pthread_mutex_lock(&mutex->mutex);
-}
-
-// 解锁
-int SDL_UnlockMutex(SDL_mutex *mutex) {
-    return pthread_mutex_unlock(&mutex->mutex);
-}
-
-// 初始化条件变量
-int SDL_CreateCond(SDL_cond *cond) {
-    return pthread_cond_init(&cond->cond, NULL);
-}
-
-// 销毁条件变量
-void SDL_DestroyCond(SDL_cond *cond) {
-    pthread_cond_destroy(&cond->cond);
-}
-
-// 等待条件变量
-int SDL_CondWait(SDL_cond *cond, SDL_mutex *mutex) {
-    return pthread_cond_wait(&cond->cond, &mutex->mutex);
-}
-
-// 发送信号
-int SDL_CondSignal(SDL_cond *cond) {
-    return pthread_cond_signal(&cond->cond);
-}
-
-void SDL_Delay(unsigned int milliseconds) {
-    struct timespec ts;
-    ts.tv_sec = milliseconds / 1000;
-    ts.tv_nsec = (milliseconds % 1000) * 1000000;
-    nanosleep(&ts, NULL);
-}
-
-// 定义一个名为 SDL_CreateThread 的函数，使用 pthread_create 来实现
-int SDL_CreateThread(pthread_t *thread, const pthread_attr_t *attr,
-                     void *(*start_routine)(void*), void *arg) {
-    return pthread_create(thread, attr, start_routine, arg);
-}
 
 
 enum {
@@ -234,8 +171,8 @@ typedef struct VideoState{
     int width, height, xleft, ytop;//视频在SDL窗口位置和大小
   
     //线程和退出
-    pthread_t      *read_tid;  //读取数据线程
-    pthread_t      *decode_tid;//解码线程
+    SDL_Thread      *read_tid;  //读取数据线程
+    SDL_Thread      *decode_tid;//解码线程
     int             quit;
 }VideoState;
 
@@ -252,13 +189,13 @@ static int packet_queue_init(PacketQueue *q)
         return AVERROR(ENOMEM);
     }
 
-    q->mutex = SDL_CreateMutex(&q->mutex);
+    q->mutex = SDL_CreateMutex();
     if (!q->mutex)
     {
         return AVERROR(ENOMEM);
     }
 
-    q->cond = SDL_CreateCond(&q->cond);
+    q->cond = SDL_CreateCond();
     if (!q->cond)
     {
         return AVERROR(ENOMEM);
@@ -384,12 +321,12 @@ static int frame_queue_init(FrameQueue *fq,int max_size){
     /*
      初始化线程标志
      */
-    if(!(fq->mutex = SDL_CreateMutex(fq->mutex))){
-//        av_log(NULL,AV_LOG_FATAL,"SDL_CreateMutex(): %s\n",SDL_GetError());
+    if(!(fq->mutex = SDL_CreateMutex())){
+        av_log(NULL,AV_LOG_FATAL,"SDL_CreateMutex(): \n");
         return AVERROR(ENOMEM);
     }
-    if(!(fq->cond = SDL_CreateCond(fq->mutex))){
-//        av_log(NULL,AV_LOG_FATAL,"SDL_CreateCond(): %s\n",SDL_GetError());
+    if(!(fq->cond = SDL_CreateCond())){
+        av_log(NULL,AV_LOG_FATAL,"SDL_CreateCond(): \n");
         return AVERROR(ENOMEM);
     }
     /*
@@ -678,7 +615,6 @@ static int audio_open(void *opaque,
 //        return -1;
 //    }
 //    return spec.size;
-    
     return 0;
 }
 
@@ -884,8 +820,7 @@ int stream_component_open(VideoState *is,int stream_index){
         is->frame_last_delay = 40e-3;//上一次渲染delay时间
         is->video_current_pts_time = av_gettime();//当前pts的系统时间
 
-        is->decode_tid = SDL_CreateThread(&video_decode_thread,NULL,NULL,is);
-        is->decode_tid = SDL_CreateThread(&is->decode_tid, NULL, NULL, is);
+        is->decode_tid = SDL_CreateThread(video_decode_thread,"video_decode_thread",is);
         break;
     case AVMEDIA_TYPE_UNKNOWN:
        av_log(avctx,AV_LOG_ERROR,"Other media type unknow - media_type = %d\n",avctx->codec_type);
@@ -928,15 +863,11 @@ int pic_height：视频帧的高度。
 AVRational pic_sar：视频帧的样本长宽比（SAR）。
  */
 
-typedef struct Retct{
-    
-}Rect;
-
-static void calculate_display_rect(Rect rect,
-                                    int scr_xleft,int scr_ytop,
-                                    int scr_width,int scr_height,
-                                    int pic_width,int pic_height,
-                                    AVRational pic_sar){
+//static void calculate_display_rect(SDL_Rect *rect,
+//                                    int scr_xleft,int scr_ytop,
+//                                    int scr_width,int scr_height,
+//                                    int pic_width,int pic_height,
+//                                    AVRational pic_sar){
 //    //  pic_sar.num = 4,pic_sar.den = 3;
 //    AVRational aspect_ratio = pic_sar;
 //    int64_t width, height, x, y;
@@ -992,8 +923,8 @@ static void calculate_display_rect(Rect rect,
 //   //计算frame的 宽高
 //   rect->w = FFMAX((int)width,1);
 //   rect->h = FFMAX((int)height,1);
-
-}
+//
+//}
 
 static void set_default_window_size(int width,int height,AVRational sar){
 //    SDL_Rect rect;
@@ -1007,7 +938,7 @@ static void set_default_window_size(int width,int height,AVRational sar){
 }
 
 int read_thread(void *arg){
-    uint32_t pixformat;
+    Uint32 pixformat;
     int ret = -1;
     int video_index  = -1;
     int audio_index  = -1;
@@ -1021,7 +952,6 @@ int read_thread(void *arg){
         av_log(NULL, AV_LOG_FATAL, "NO MEMORY!\n");
         goto __ERROR;
     }
-    
     //1. Open media file
   if((ret = avformat_open_input(&ic, is->filename, NULL, NULL)) < 0) {
     av_log(NULL, AV_LOG_ERROR, "Could not open file: %s, %d(%s)\n", is->filename, ret, av_err2str(ret));
@@ -1156,7 +1086,7 @@ static void stream_component_close(VideoState *is, int stream_index){
   case AVMEDIA_TYPE_VIDEO:
     frame_queue_abort(&is->pictq);
     frame_queue_signal(&is->pictq); //可以确保所有等待的线程都被唤醒
-//    SDL_WaitThread(is->decode_tid, NULL);
+    SDL_WaitThread(is->decode_tid, NULL);
     is->decode_tid = NULL;
       break;
   default:
@@ -1165,7 +1095,7 @@ static void stream_component_close(VideoState *is, int stream_index){
 }
 
 static void stream_close(VideoState *is){
-//    SDL_WaitThread(is->read_tid, NULL);
+    SDL_WaitThread(is->read_tid, NULL);
 
     /* close each stream */
     if (is->audio_index >= 0)
@@ -1180,13 +1110,13 @@ static void stream_close(VideoState *is){
 
     frame_queue_destory(&is->pictq);
 
-    av_free(is->filename);
+//    av_free(is->filename);
 //    if(is->texture)
 //        SDL_DestroyTexture(is->texture);
     av_free(is);
 }
 //添加定时事件
-static uint32_t sdl_refresh_timer_cb(uint32_t interval,void *opaque){
+static Uint32 sdl_refresh_timer_cb(Uint32 interval,void *opaque){
 //    SDL_Event event;
 //    event.type = FF_REFRESH_EVENT;
 //    event.user.data1 = opaque;
@@ -1228,9 +1158,9 @@ static VideoState *stream_open(const char* filename){
    }
 
    is->av_sync_type = av_sync_type;
-   is->read_tid = SDL_CreateThread(read_thread,"read_thread",NULL,is);
+   is->read_tid = SDL_CreateThread(read_thread,"read_thread",is);
    if(!is->read_tid){
-//      av_log(NULL,AV_LOG_FATAL,"SDL_CreateThread():%s\n",SDL_GetError());
+      av_log(NULL,AV_LOG_FATAL,"SDL_CreateThread():\n");
       goto __ERROR;
    }
 
@@ -1268,7 +1198,7 @@ double get_video_clock(VideoState *is){
     return is->video_current_pts_time + delta;
 }
 //系统时间 外界对其时间
-double get_external_clock(){
+double get_external_clock(void){
     return av_gettime()/ch_µs_to_s;
 }
 
@@ -1498,19 +1428,14 @@ static void sdl_event_loop(VideoState *is){
 13. 收尾，释放资源
 */
 
-int main1(int argc,char* argv[]){
+int scplayer(void){
     int ret  = 0;
     int flags = 0;
     VideoState *is;
 
-    av_log_set_level(AV_LOG_INFO);
+    av_log_set_level(AV_LOG_DEBUG);
 
-    if(argc < 2){
-        fprintf(stderr,"没有输入文件\n");
-        exit(1);
-    }
-
-    input_filename = argv[1];
+    input_filename = "/Users/stan/Desktop/1280x720.mp4";
 
 //    flags = SDL_INIT_AUDIO | SDL_INIT_AUDIO | SDL_INIT_TIMER;
 //    if(SDL_Init(flags)){
@@ -1539,7 +1464,6 @@ int main1(int argc,char* argv[]){
     }
 
     sdl_event_loop(is);//循环读取事件，主要是视频帧显示事件
-    
     return 0;
 }
 /*
@@ -1560,5 +1484,4 @@ p2 = (struct Person*) malloc(sizeof(struct Person));
 p2->age = 32;
 
  */
-
 

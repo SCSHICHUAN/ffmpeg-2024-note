@@ -17,6 +17,7 @@
 #import <GLKit/GLKit.h>
 #import "SCRender.h"
 #define kWidth ([UIScreen mainScreen].bounds.size.width)
+#include "SCPlayer.h"
 
 ViewController *c_self;
 
@@ -65,9 +66,12 @@ ViewController *c_self;
     self.audio_pak_count = 0;
     self.lab.text = @"拉流中请稍等...";
     
-    dispatch_async(dispatch_get_global_queue(0, 0), ^{
-        [self run];
-    });
+//    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+//        [self run];
+//    });
+        dispatch_async(dispatch_get_global_queue(0, 0), ^{
+            scplayer();
+        });
     
 }
 - (void)viewDidLoad {

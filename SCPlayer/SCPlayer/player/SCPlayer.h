@@ -11,4 +11,6 @@
 
 #include <stdio.h>
 
+int scplayer(void);
+
 #endif /* SCPlayer_h */

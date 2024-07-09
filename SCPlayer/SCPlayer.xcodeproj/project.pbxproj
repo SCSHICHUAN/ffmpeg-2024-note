@@ -88,6 +88,7 @@
 		F69122F92B47E88800973F18 /* yuv_fragment.glsl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = yuv_fragment.glsl; sourceTree = "<group>"; };
 		F69FEC8C2C3BEB7B00ACFC92 /* SCPlayer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SCPlayer.h; sourceTree = "<group>"; };
 		F69FEC8D2C3BEB7B00ACFC92 /* SCPlayer.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SCPlayer.c; sourceTree = "<group>"; };
+		F69FEC962C3CEE2F00ACFC92 /* SCSDL.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SCSDL.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -269,6 +270,7 @@
 				F66486FF2B57CE220017426C /* SCRender.mm */,
 				F69FEC8C2C3BEB7B00ACFC92 /* SCPlayer.h */,
 				F69FEC8D2C3BEB7B00ACFC92 /* SCPlayer.c */,
+				F69FEC962C3CEE2F00ACFC92 /* SCSDL.h */,
 			);
 			path = player;
 			sourceTree = "<group>";
