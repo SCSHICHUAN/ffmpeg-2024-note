@@ -33,6 +33,7 @@ Create by stan 2024-6-30
 
 //#include <SDL2/SDL.h>
 #include <pthread.h>
+#include "jpeglib.h"
 #include "libavutil/avutil.h"
 #include "libavutil/fifo.h"
 #include "libavutil/time.h"

@@ -40,7 +40,6 @@
 		F69122FA2B47E88800973F18 /* vertex.glsl in Resources */ = {isa = PBXBuildFile; fileRef = F69122F82B47E88800973F18 /* vertex.glsl */; };
 		F69122FB2B47E88800973F18 /* yuv_fragment.glsl in Resources */ = {isa = PBXBuildFile; fileRef = F69122F92B47E88800973F18 /* yuv_fragment.glsl */; };
 		F69FEC8E2C3BEB7B00ACFC92 /* SCPlayer.c in Sources */ = {isa = PBXBuildFile; fileRef = F69FEC8D2C3BEB7B00ACFC92 /* SCPlayer.c */; };
-		F69FEC912C3BED3000ACFC92 /* fifo.c in Sources */ = {isa = PBXBuildFile; fileRef = F69FEC902C3BED3000ACFC92 /* fifo.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -89,8 +88,6 @@
 		F69122F92B47E88800973F18 /* yuv_fragment.glsl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = yuv_fragment.glsl; sourceTree = "<group>"; };
 		F69FEC8C2C3BEB7B00ACFC92 /* SCPlayer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SCPlayer.h; sourceTree = "<group>"; };
 		F69FEC8D2C3BEB7B00ACFC92 /* SCPlayer.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SCPlayer.c; sourceTree = "<group>"; };
-		F69FEC8F2C3BED3000ACFC92 /* fifo.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = fifo.h; sourceTree = "<group>"; };
-		F69FEC902C3BED3000ACFC92 /* fifo.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = fifo.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -142,27 +139,11 @@
 		8B076F58228FE85200ACCD47 /* SCPlayer */ = {
 			isa = PBXGroup;
 			children = (
-				F68807FA2B58394800BC579B /* jpeg */,
-				F68807E02B58367200BC579B /* wood.jpg */,
+				F69FEC952C3CE19D00ACFC92 /* libs */,
+				F69FEC942C3CE13600ACFC92 /* player */,
+				F69FEC932C3CE11600ACFC92 /* occlass */,
+				F69FEC922C3CE08600ACFC92 /* other */,
 				F69122F72B47E88800973F18 /* glsl */,
-				8B076F99228FFBC200ACCD47 /* v1.mp4 */,
-				8B076F6F228FE8D700ACCD47 /* ffmpeglib */,
-				8B076F59228FE85200ACCD47 /* AppDelegate.h */,
-				8B076F5A228FE85200ACCD47 /* AppDelegate.m */,
-				8B076F5C228FE85200ACCD47 /* ViewController.h */,
-				8B076F5D228FE85200ACCD47 /* ViewController.m */,
-				8B076F5F228FE85200ACCD47 /* Main.storyboard */,
-				8B076F62228FE85200ACCD47 /* Assets.xcassets */,
-				8B076F64228FE85200ACCD47 /* LaunchScreen.storyboard */,
-				8B076F67228FE85200ACCD47 /* Info.plist */,
-				8B076F68228FE85200ACCD47 /* main.m */,
-				F68807DF2B5801F600BC579B /* Camera.h */,
-				F66486FE2B57CE220017426C /* SCRender.h */,
-				F66486FF2B57CE220017426C /* SCRender.mm */,
-				F69FEC8F2C3BED3000ACFC92 /* fifo.h */,
-				F69FEC902C3BED3000ACFC92 /* fifo.c */,
-				F69FEC8C2C3BEB7B00ACFC92 /* SCPlayer.h */,
-				F69FEC8D2C3BEB7B00ACFC92 /* SCPlayer.c */,
 			);
 			path = SCPlayer;
 			sourceTree = "<group>";
@@ -255,6 +236,52 @@
 			path = glsl;
 			sourceTree = "<group>";
 		};
+		F69FEC922C3CE08600ACFC92 /* other */ = {
+			isa = PBXGroup;
+			children = (
+				F68807E02B58367200BC579B /* wood.jpg */,
+				8B076F99228FFBC200ACCD47 /* v1.mp4 */,
+				8B076F5F228FE85200ACCD47 /* Main.storyboard */,
+				8B076F62228FE85200ACCD47 /* Assets.xcassets */,
+				8B076F64228FE85200ACCD47 /* LaunchScreen.storyboard */,
+				8B076F67228FE85200ACCD47 /* Info.plist */,
+			);
+			path = other;
+			sourceTree = "<group>";
+		};
+		F69FEC932C3CE11600ACFC92 /* occlass */ = {
+			isa = PBXGroup;
+			children = (
+				8B076F59228FE85200ACCD47 /* AppDelegate.h */,
+				8B076F5A228FE85200ACCD47 /* AppDelegate.m */,
+				8B076F5C228FE85200ACCD47 /* ViewController.h */,
+				8B076F5D228FE85200ACCD47 /* ViewController.m */,
+				8B076F68228FE85200ACCD47 /* main.m */,
+			);
+			path = occlass;
+			sourceTree = "<group>";
+		};
+		F69FEC942C3CE13600ACFC92 /* player */ = {
+			isa = PBXGroup;
+			children = (
+				F68807DF2B5801F600BC579B /* Camera.h */,
+				F66486FE2B57CE220017426C /* SCRender.h */,
+				F66486FF2B57CE220017426C /* SCRender.mm */,
+				F69FEC8C2C3BEB7B00ACFC92 /* SCPlayer.h */,
+				F69FEC8D2C3BEB7B00ACFC92 /* SCPlayer.c */,
+			);
+			path = player;
+			sourceTree = "<group>";
+		};
+		F69FEC952C3CE19D00ACFC92 /* libs */ = {
+			isa = PBXGroup;
+			children = (
+				F68807FA2B58394800BC579B /* jpeg */,
+				8B076F6F228FE8D700ACCD47 /* ffmpeglib */,
+			);
+			path = libs;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -334,7 +361,6 @@
 				F68808072B58394800BC579B /* JpegUtil.c in Sources */,
 				8B076F5E228FE85200ACCD47 /* ViewController.m in Sources */,
 				F69FEC8E2C3BEB7B00ACFC92 /* SCPlayer.c in Sources */,
-				F69FEC912C3BED3000ACFC92 /* fifo.c in Sources */,
 				8B076F69228FE85200ACCD47 /* main.m in Sources */,
 				8B076F5B228FE85200ACCD47 /* AppDelegate.m in Sources */,
 				F66487002B57CE220017426C /* SCRender.mm in Sources */,
@@ -481,8 +507,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = C4HH236MR9;
-				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/SCPlayer";
-				INFOPLIST_FILE = SCPlayer/Info.plist;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/SCPlayer/libs/ffmpeglib/include",
+					"$(PROJECT_DIR)/SCPlayer",
+				);
+				INFOPLIST_FILE = SCPlayer/other/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 9.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -490,13 +519,13 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/SCPlayer/ffmpeglib/lib",
-					"$(PROJECT_DIR)/SCPlayer/jpeg/prebuilt/ios",
+					"$(PROJECT_DIR)/SCPlayer/libs/ffmpeglib/lib",
+					"$(PROJECT_DIR)/SCPlayer/libs/jpeg/prebuilt/ios",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.getstrem.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				TARGETED_DEVICE_FAMILY = 1;
-				USER_HEADER_SEARCH_PATHS = SCPlayer/ffmpeglib/include;
+				USER_HEADER_SEARCH_PATHS = "";
 			};
 			name = Debug;
 		};
@@ -506,8 +535,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = C4HH236MR9;
-				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/SCPlayer";
-				INFOPLIST_FILE = SCPlayer/Info.plist;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/SCPlayer/libs/ffmpeglib/include",
+					"$(PROJECT_DIR)/SCPlayer",
+				);
+				INFOPLIST_FILE = SCPlayer/other/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 9.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -515,13 +547,13 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/SCPlayer/ffmpeglib/lib",
-					"$(PROJECT_DIR)/SCPlayer/jpeg/prebuilt/ios",
+					"$(PROJECT_DIR)/SCPlayer/libs/ffmpeglib/lib",
+					"$(PROJECT_DIR)/SCPlayer/libs/jpeg/prebuilt/ios",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.getstrem.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				TARGETED_DEVICE_FAMILY = 1;
-				USER_HEADER_SEARCH_PATHS = SCPlayer/ffmpeglib/include;
+				USER_HEADER_SEARCH_PATHS = "";
 			};
 			name = Release;
 		};
