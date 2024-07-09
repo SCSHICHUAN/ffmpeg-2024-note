@@ -1,0 +1,10 @@
+ffmpeg 5.0 编译参考 https://www.jianshu.com/p/f5265b062f54
+
+1.--disable-audiotoolbox  删除
+2.ARCHS="arm64  x86_64" 只留这两个
+3.DEPLOYMENT_TARGET="13.0" 改为13
+
+FFmpeg引入iOS中
+1.Build Settings->Search Paths
+Library Search Paths 添入 $(PROJECT_DIR)/SCFFmpeg/ffmpeglib/lib
+System Header Search Paths 添入 $(PROJECT_DIR)/SCFFmpeg/ffmpeglib/include
