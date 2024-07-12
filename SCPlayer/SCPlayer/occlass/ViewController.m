@@ -18,6 +18,8 @@
 #import "SCRender.h"
 #define kWidth ([UIScreen mainScreen].bounds.size.width)
 #include "SCPlayer.h"
+#import "SCAudioQueuePlayer.h"
+#include "SCPlayer.h"
 
 ViewController *c_self;
 
@@ -60,16 +62,34 @@ ViewController *c_self;
     });
 }
 
-int when_frame_push(AVFrame *frame, int flag){
-    
+int when_frame_push(AVFrame *frame, int flag,void *opaque){
     
     dispatch_async(dispatch_get_main_queue(), ^{
-        [c_self->render displayWithFrame:frame];
+        
+    if(flag == 0){
+        [c_self initAudio:opaque];
+    }else if(flag == 1){
+       [c_self->render displayWithFrame:frame];
+    }
+    
     });
     
 //    printf("fram.size = %d,flat = %d \n",frame->pkt_size,flag);
     return 0;
 }
+
+
+-(void)initAudio:(void *)opaque{
+    VideoState *is = (VideoState *)opaque;
+    SCAudioQueuePlayer *aup = [[SCAudioQueuePlayer alloc] init];
+    [aup initializeAudioQueue:is];
+    [aup play];
+}
+
+
+
+
+
 
 -(void)testClick2{
     self.end = NO;

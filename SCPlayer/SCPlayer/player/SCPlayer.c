@@ -33,157 +33,7 @@ Create by stan 2024-6-30
 四.音视频同步 ---线程1中 主线程
  */
 
-#include "SCSDL.h"
-//#include <SDL2/SDL.h>
-#include <libavutil/avutil.h>
-#include <libavutil/fifo.h>
-#include <libavutil/time.h>
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libswscale/swscale.h>
-#include <libswresample/swresample.h>
-#include <time.h>
-#include <sys/time.h>
-#include <signal.h>
 
-//sdl
-#define FF_REFRESH_EVENT (100)
-#define FF_QUIT_EVENT (100 + 1)
-
-#define MAX_QUEUE_SIZE (5 * 1024 * 1024)
-#define AUDIO_BUFFER_SIZE 1024
-/*
-1.00 秒 = 1000.00 毫秒
-1.00 秒 = 1000000.00 微秒 用英文表示
-1.00 s = 1000.00 ms
-1.00 s = 1000000.00 µs
- */
-#define ch_µs_to_s 1000000.0
-
-#define VIDEO_PICTURE_QUEUE_SIZE 3
-#define SAMPLE_QUEUE_SIZE 9
-#define FRAME_QUEUE_SIZE FFMAX(SAMPLE_QUEUE_SIZE, VIDEO_PICTURE_QUEUE_SIZE)
-
-static const char *input_filename;
-static const char *window_title;
-
-static int default_width = 1080; //期望显示的宽
-static int default_height = 720; //期望显示的高
-static int screen_width  = 0;
-static int screen_height = 0;
-
-//static SDL_Window      *win;
-//static SDL_Renderer    *renderer;
-static int is_full_screen = 0;
-//static int screen_left = SDL_WINDOWPOS_CENTERED;
-//static int screen_top = SDL_WINDOWPOS_CENTERED;
-
-
-
-enum {
-  AV_SYNC_AUDIO_MASTER,
-  AV_SYNC_VIDEO_MASTER,
-  AV_SYNC_EXTERNAL_MASTER,
-};
-
-static int av_sync_type = AV_SYNC_AUDIO_MASTER;
-
-// SDL 窗口的大小
-static int w_width = 720;
-static int w_height = 480;
-
-//static SDL_Window *win = NULL;
-//static SDL_Renderer *renderer = NULL;
-
-typedef struct MyPacketEle
-{
-    AVPacket *pkt;
-} MyPacketEle;
-
-typedef struct PacketQueue
-{
-    AVFifo *pkts;     // 储存元素
-    int nb_packets;   // 元素的个数
-    int size;         // 整个queue的大小
-    int64_t duration; // 整个queue的时长
-
-    SDL_mutex *mutex; // 互斥锁
-    SDL_cond *cond;   // 信号量
-
-} PacketQueue;
-
-typedef struct Fram{
-    AVFrame *frame;  //存储解码后的视频帧
-    double pts;      //帧的呈现时刻
-    double duration; //帧的持续时间
-    int64_t pos;     //在pkt中的位置
-    int width;       //帧的宽
-    int height;      //帧的高
-    int format;      //像素格式
-    AVRational sar;  //帧的宽高比
-}Frame;
-
-typedef struct FrameQueue{
-    Frame queue[FRAME_QUEUE_SIZE];//帧数组
-    int  rindex;                  //读帧索引
-    int  windex;                  //写帧索引
-    int  size;                    //整个队列的大小
-    int  abort;                   //队列终止标志
-    SDL_mutex *mutex; //互斥
-    SDL_cond  *cond;  //同步
-}FrameQueue;
-
-
-typedef struct VideoState{
-    //文件头信息
-    char *filename;
-    AVFormatContext *ic;
-
-    //音视频同步相关
-    int av_sync_type;
-
-    double          audio_clock;     //音频pts
-    double          frame_timer;     //已经播放完成的视频的时间
-    double          frame_last_pts;  //视频最后一次的pts
-    double          frame_last_delay;//视频最后一次的delay
-
-    double          video_clock;//预测视频帧的pts 视频时间，最后的frame的pts+推算的下一帧的pts
-    double          video_current_pts;     //当前播报视频帧的pts
-    double          video_current_pts_time;//当前播报视频帧的pts单位秒
-
-    // 音频
-    int             audio_index;     //音频流的index
-    AVStream        *audio_st;       //音频流
-    AVCodecContext  *audio_ctx;      //音频的解码环境
-    PacketQueue     audioq;          //音频的队列
-    uint8_t         *audio_buf;      // 解码后到音频数据
-    unsigned int    audio_buf_size;  // 数据包的大小
-    unsigned int    audio_buf_index; // 游标
-    AVFrame         audio_frame;     //音频的frame
-    AVPacket        audio_pkt;       //音频包
-    uint8_t         *audio_pkt_data; //音频原始数据
-    int             audio_pkt_size;
-    struct SwrContext *audio_swr_ctx; //音频重采样
-
-    // 视频
-    int             video_index; //视频流的index
-    AVStream        *video_st;  //视频流
-    AVCodecContext  *video_ctx; //视频的解码环境
-    PacketQueue     videoq;     //视频包的queue
-    AVPacket        video_pkt;  //视频pkt
-    struct SwsContext *sws_ctx; //视频重采样
-//    SDL_Texture     *texture;   //纹理
-    FrameQueue      pictq;      //储存解码后的视频帧
-    int width, height, xleft, ytop;//视频在SDL窗口位置和大小
-  
-    //线程和退出
-    SDL_Thread      *read_tid;  //读取数据线程
-    SDL_Thread      *decode_tid;//解码线程
-    int             quit;
-    
-    //回调
-    frame_call_bacl fn;
-}VideoState;
 
 /*
   自定义pkt queue
@@ -512,8 +362,7 @@ static int audio_decode_frame(VideoState *is)
                                    in,
                                    in_count);
                 // data_size = （len2）采样个数 x （nb_channels）音频通道数 x 位深
-                data_size = len2 * is->audio_frame.ch_layout.nb_channels
-                * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
+                data_size = len2 * is->audio_frame.ch_layout.nb_channels * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
             }else{
                 // 不需要采样
                 is->audio_buf = is->audio_frame.data[0];
@@ -550,45 +399,48 @@ __OUT:
   len 声卡需要的音频长度
   实际可能不能给len
  */
-static void sdl_audio_callback(void *userdata, uint8_t *stream, int len)
+void sdl_audio_callback_1(void *userdata, uint8_t *stream, int len)
 {
-    int len1 = 0;
+//    int len1 = 0;
     int audio_size = 0;
 
     VideoState *is = (VideoState *)userdata;
-
-    while (len > 0){
-
-        if (is->audio_buf_index >= is->audio_buf_size){ // buf数据用完
-            audio_size = audio_decode_frame(is);
-            if (audio_size < 0){   // 没有解码到数据
-                is->audio_buf_size = AUDIO_BUFFER_SIZE; // 播放静默音
-                is->audio_buf = NULL;
-            }else{ // 解码到数据
-                is->audio_buf_size = audio_size;
-            }
-            is->audio_buf_index = 0; // 游标在开始位置
-        }
-
-        /*
-        如果缓冲区buffer还有数据
-        */
-        // 缓冲区数据没有读完 比较 需要的和实际的数据,用少的那一个
-        len1 = is->audio_buf_size - is->audio_buf_index; // 当前缓冲区数据还剩余的
-        if (len1 > len){
-            len1 = len;
-        }
-
-        if (is->audio_buf){
-            memcpy(stream, (uint8_t *)is->audio_buf + is->audio_buf_index, len1);
-        }else{
-            memcpy(stream, 0, len1);
-        }
-
-        len -= len1;                 // 实际消耗len1的数据
-        stream += len1;              // 从这个地方开始接受数据
-        is->audio_buf_index += len1; // 移动游标
-    }
+   
+    is->out_audio_size = audio_decode_frame(is);
+    
+    
+//    while (len > 0){
+//
+//        if (is->audio_buf_index >= is->audio_buf_size){ // buf数据用完
+//            audio_size = audio_decode_frame(is);
+//            if (audio_size < 0){   // 没有解码到数据
+//                is->audio_buf_size = AUDIO_BUFFER_SIZE; // 播放静默音
+//                is->audio_buf = NULL;
+//            }else{ // 解码到数据
+//                is->audio_buf_size = audio_size;
+//            }
+//            is->audio_buf_index = 0; // 游标在开始位置
+//        }
+//
+//        /*
+//        如果缓冲区buffer还有数据
+//        */
+//        // 缓冲区数据没有读完 比较 需要的和实际的数据,用少的那一个
+//        len1 = is->audio_buf_size - is->audio_buf_index; // 当前缓冲区数据还剩余的
+//        if (len1 > len){
+//            len1 = len;
+//        }
+//
+//        if (is->audio_buf){
+//            memcpy(stream, (uint8_t *)is->audio_buf + is->audio_buf_index, len1);
+//        }else{
+//            memcpy(stream, 0, len1);
+//        }
+//
+//        len -= len1;                 // 实际消耗len1的数据
+//        stream += len1;              // 从这个地方开始接受数据
+//        is->audio_buf_index += len1; // 移动游标
+//    }
 }
 
 
@@ -598,32 +450,34 @@ static int audio_open(void *opaque,
                       AVChannelLayout *wanted_channel_layout,
                       int wented_salple_rate){
 
-//    /*SDL_OpenAudio需要传入两个参数，一个是我们想要的音频格式。一个是最后实际的音频格式。
-//     这里的SDL_AudioSpec，是SDL中记录音频格式的结构体。
-//     &spec 告诉调用者实际的参数
-//     */
-//    SDL_AudioSpec wanted_spec, spec;
-//    int wanted_nb_channels = wanted_channel_layout->nb_channels;
-//    /*9.初始化音频设备参数
-//      为音频设备设置参数
-//    */
-//    wanted_spec.freq = wented_salple_rate; // 采样率
-//    wanted_spec.format = AUDIO_S16SYS;    // 有符号的16位
-//    wanted_spec.channels = wanted_nb_channels;
-//    wanted_spec.silence = 0;                 // 静默音
-//    wanted_spec.samples = AUDIO_BUFFER_SIZE; // 采样个数
+    /*SDL_OpenAudio需要传入两个参数，一个是我们想要的音频格式。一个是最后实际的音频格式。
+     这里的SDL_AudioSpec，是SDL中记录音频格式的结构体。
+     &spec 告诉调用者实际的参数
+     */
+    AudioInfo wanted_spec;
+    int wanted_nb_channels = wanted_channel_layout->nb_channels;
+    /*9.初始化音频设备参数
+      为音频设备设置参数
+    */
+    wanted_spec.freq = wented_salple_rate; // 采样率
+    wanted_spec.format = AUDIO_S16SYS;    // 有符号的16位
+    wanted_spec.channels = wanted_nb_channels;
+    wanted_spec.silence = 0;                 // 静默音
+    wanted_spec.samples = AUDIO_BUFFER_SIZE; // 采样个数
 //    wanted_spec.callback = sdl_audio_callback;
-//    wanted_spec.userdata = (void *)opaque;
-//
-//    av_log(NULL,AV_LOG_INFO,
-//           "wanted spec: channels:%d,sample_fmt:%d,sanple_ret:%d \n",
-//           wanted_nb_channels,AUDIO_S16,wented_salple_rate);
-//
+    wanted_spec.userdata = (void *)opaque;
+
+    av_log(NULL,AV_LOG_INFO,
+           "wanted spec: channels:%d,sample_fmt:%d,sanple_ret:%d \n",
+           wanted_nb_channels,AUDIO_S16,wented_salple_rate);
+
 //    if (SDL_OpenAudio(&wanted_spec, &spec) < 0){
 //        av_log(NULL, AV_LOG_ERROR, "打开音频设备失败!\n");
 //        return -1;
 //    }
 //    return spec.size;
+    VideoState *is = (VideoState*)opaque;
+    is->audioInfo = wanted_spec;
     return 0;
 }
 
@@ -688,7 +542,7 @@ int video_decode_thread(void *arg){
 
     VideoState *is = (VideoState *)arg;
     AVFrame *video_frame = NULL;
-    Frame *vp = NULL;
+//    Frame *vp = NULL;
 
     AVRational tb = is->video_st->time_base;
     AVRational frame_rate = av_guess_frame_rate(is->ic,is->video_st,NULL);//猜测视频流或帧的帧率（Frame Rate）
@@ -806,7 +660,7 @@ int stream_component_open(VideoState *is,int stream_index){
     switch (avctx->codec_type){
     case AVMEDIA_TYPE_AUDIO:
          sample_rate = avctx->sample_rate;
-         ret = av_channel_layout_copy(&ch_layout,&avctx->ch_layout);
+         ret = av_channel_layout_copy(&ch_layout,&avctx->ch_layout);//拷贝音频设备参数
          if(ret < 0){
             goto __ERROR;
          }
@@ -824,6 +678,7 @@ int stream_component_open(VideoState *is,int stream_index){
 
          //开始播放音频
 //         SDL_PauseAudio(0);
+        is->fn_call(NULL,0,is);
         break;
     case AVMEDIA_TYPE_VIDEO:
         is->video_index = stream_index;
@@ -844,6 +699,9 @@ int stream_component_open(VideoState *is,int stream_index){
         break;
     }
 
+   
+   
+    
   ret = 0;
   goto __END;
 __ERROR:
@@ -1294,7 +1152,7 @@ static void video_display(VideoState *is){
 //      SDL_RenderCopy(renderer,is->texture,NULL,&rect);
 //      SDL_RenderPresent(renderer);
  
-      is->fn(frame,0);
+      is->fn_call(frame,1,is);
       fream_queue_pop(&is->pictq);
 }
 
@@ -1468,7 +1326,7 @@ static void sdl_event_loop(VideoState *is){
 13. 收尾，释放资源
 */
 
-int scplayer(frame_call_bacl fn){
+int scplayer(frame_call_bacl fn_call){
     int ret  = 0;
     int flags = 0;
     VideoState *is;
@@ -1498,7 +1356,7 @@ int scplayer(frame_call_bacl fn){
 //    }
 
     is = stream_open(input_filename);
-    is->fn = fn;
+    is->fn_call = fn_call;
     if(!is){
         av_log(NULL,AV_LOG_FATAL,"初始化VideoState失败\n");
         do_exit(NULL);
