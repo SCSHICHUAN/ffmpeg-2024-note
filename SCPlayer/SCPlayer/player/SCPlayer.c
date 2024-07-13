@@ -1346,7 +1346,7 @@ int scplayer(frame_call_bacl fn_call){
 
     av_log_set_level(AV_LOG_INFO);
 
-    input_filename = "/Users/stan/Desktop/1280x720.mp4";
+    input_filename = "/Users/stan/Desktop/ffop.mp4";
 //    input_filename = "/Users/stan/Desktop/mourse.MP4";
 //    input_filename = "/Users/stan/Desktop/1.mp4";
 //    input_filename = "/Users/stan/Desktop/1.MOV";
