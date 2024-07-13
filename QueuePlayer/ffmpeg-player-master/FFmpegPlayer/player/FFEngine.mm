@@ -194,6 +194,9 @@ fail:
 @end
 
 @implementation FFEngine (Decode)
+/*
+ read thread 和  decode thread
+ */
 - (void)decode {
     dispatch_async(decode_dispatch_queue, ^{
         while (true) {
@@ -217,7 +220,7 @@ fail:
             }
             av_packet_unref(self->packet);
             pthread_mutex_lock(&(self->mutex));
-            int ret_code = av_read_frame(self->formatContext, self->packet);
+            int ret_code = av_read_frame(self->formatContext, self->packet);//从 avfcont中读取 avpacket
             pthread_mutex_unlock(&(self->mutex));
             if(ret_code >= 0) {
                 if(self.mediaVideoContext && self->packet->stream_index == self.mediaVideoContext.streamIndex) {
@@ -227,7 +230,7 @@ fail:
                     obj.unit = unit;
                     AVFrame *frame = obj.frame;
                     pthread_mutex_lock(&(self->mutex));
-                    BOOL ret = [self.mediaVideoContext decodePacket:self->packet frame:&frame];
+                    BOOL ret = [self.mediaVideoContext decodePacket:self->packet frame:&frame];//指针的地址传入
                     pthread_mutex_unlock(&(self->mutex));
                     obj.pts = obj.frame->pts * unit;
                     obj.duration = [self.mediaVideoContext oneFrameDuration];
@@ -236,7 +239,7 @@ fail:
                     }
                     NSLog(@"【PTS】【Video】: %f, duration: %lld, last: %lld, repeat: %d", frame->pts * unit, duration, self->packet->duration, frame->repeat_pict);
                     if(ret) {
-                        [self.videoFrameCacheQueue enqueue:obj];
+                        [self.videoFrameCacheQueue enqueue:obj];//解码后的视频帧保存到视频队列中
                         videoCacheDuration = [self.videoFrameCacheQueue count] * [self.mediaVideoContext oneFrameDuration];
                         /// 通知视频渲染队列可以继续渲染了
                         /// 如果视频渲染队列未暂停则无作用

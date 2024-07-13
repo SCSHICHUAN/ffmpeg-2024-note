@@ -106,11 +106,12 @@ fail:
         }
         int buffer_size = self.audioInformation.buffer_size;
         float unit = av_q2d(self.codecContext->time_base);
-        FFQueueAudioObject *obj = [[FFQueueAudioObject alloc] initWithLength:buffer_size pts:packet->pts * unit duration:packet->duration * unit];
+        FFQueueAudioObject *obj = [[FFQueueAudioObject alloc] initWithLength:buffer_size pts:frame->pts * unit duration:packet->duration * unit];
         uint8_t *buffer = obj.data;
+        //重采样 data 保存在 &buffer，
         int ret = swr_convert(au_convert_ctx, &buffer, frame->nb_samples, (const uint8_t **)frame->data, frame->nb_samples);
         [obj updateLength:ret * self.audioInformation.bytesPerSample];
-        [tmps addObject:obj];
+        [tmps addObject:obj];//保存好解码的帧
     }
     av_frame_unref(frame);
     return tmps;

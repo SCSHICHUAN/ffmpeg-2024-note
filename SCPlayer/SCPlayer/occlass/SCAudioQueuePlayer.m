@@ -14,6 +14,10 @@
 
 #define NUM_BUFFERS 3
 #define MAX_BUFFER_COUNT 3
+/*
+ 最小是音频帧的大小  =  一个音频帧采样个数 x （nb_channels）音频通道数 x 位深
+      4096(byte)  =   1024 x 2 x 2(byte)
+ */
 #define BUFFER_SIZE 4096
 
 
@@ -45,7 +49,7 @@ SCAudioQueuePlayer *sc_self;
 
 // AudioQueue回调函数
 void OutputBufferCallback(void *inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer) {
-   
+    
     SCAudioQueuePlayer *scp = (__bridge SCAudioQueuePlayer *)inUserData;//C 对象 转OC对象
     VideoState *is = scp->is;
     if (is->audioq.nb_packets <= 0) {
@@ -55,38 +59,46 @@ void OutputBufferCallback(void *inUserData, AudioQueueRef inAQ, AudioQueueBuffer
     sdl_audio_callback_1(is,NULL,0);
     int buff_size = is->out_audio_size;
     if(!is->audio_buf) return;
-
-
+    
+    
     inBuffer->mAudioDataByteSize = buff_size;
-    memcpy(inBuffer->mAudioData, is->audio_buf, buff_size);
+    memcpy(inBuffer->mAudioData, is->audio_buf, inBuffer->mAudioDataByteSize);
     AudioQueueEnqueueBuffer(scp->audioQueue, inBuffer, 0, NULL);
     
-    printf("buff_size:%d \n",buff_size);
+//    printf("buff_size:%d \n",buff_size);
     
-
-//    memcpy(inBuffer->mAudioData,is->audio_buf, 4096);
-//
-//    printf("bytesRead:%d \n",is->audio_buf_size);
-//    if (is->audio_buf_size > 0) {
-//        inBuffer->mAudioDataByteSize = 4096;
-//        AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, NULL);
-//    } else {
-//        // 如果文件读取结束，停止播放
-//        AudioQueueStop(inAQ, false);
-////        vc->audioQueueStarted = NO;
-//        NSLog(@"音频播放结束");
-//    }
+    
+    if(buff_size <=0) {
+        // 如果文件读取结束，停止播放
+        AudioQueueStop(inAQ, false);
+        //        vc->audioQueueStarted = NO;
+        NSLog(@"音频播放结束");
+    }
+    
+    
+    //    memcpy(inBuffer->mAudioData,is->audio_buf, 4096);
+    //
+    //    printf("bytesRead:%d \n",is->audio_buf_size);
+    //    if (is->audio_buf_size > 0) {
+    //        inBuffer->mAudioDataByteSize = 4096;
+    //        AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, NULL);
+    //    } else {
+    //        // 如果文件读取结束，停止播放
+    //        AudioQueueStop(inAQ, false);
+    ////        vc->audioQueueStarted = NO;
+    //        NSLog(@"音频播放结束");
+    //    }
 }
 
 
 
 
 - (void)initializeAudioQueue:(VideoState *)is {
-   
+    
     sc_self = self;
     self->is = is;
-
-
+    
+    
     
     /// 播放器播放时的ffmpeg采样格式
     /// 指定了播放器在读取数据时的数据长度(一帧多少个字节)
@@ -143,7 +155,7 @@ void OutputBufferCallback(void *inUserData, AudioQueueRef inAQ, AudioQueueBuffer
 
 
 - (void)play {
-
+    
 }
 - (void)stop {
     AudioQueueStop(audioQueue, YES);

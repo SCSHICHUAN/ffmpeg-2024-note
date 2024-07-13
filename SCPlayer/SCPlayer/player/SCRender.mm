@@ -21,7 +21,7 @@
 #import "JpegUtil.h"
 
 // camera
-Camera camera(glm::vec3(0.0f, 0.0f, 1.5f));
+Camera camera(glm::vec3(0.0f, 0.0f, 2.5f));
 
 @interface SCRender ()
 {
@@ -119,7 +119,7 @@ Camera camera(glm::vec3(0.0f, 0.0f, 1.5f));
 }
 /// 初始化OpenGL可编程程序
 - (BOOL)_setupOpenGLProgram {
-//    [self.openGLContext makeCurrentContext];
+    //    [self.openGLContext makeCurrentContext];
     [EAGLContext setCurrentContext:glView.context];
     _glProgram = glCreateProgram();
     _vertextShader = [self _compileShader:@"vertex" shaderType:GL_VERTEX_SHADER];
@@ -140,48 +140,49 @@ Camera camera(glm::vec3(0.0f, 0.0f, 1.5f));
     return success;
 }
 - (void)_setupOpenGL {
-
+    
+    
     /// 顶点数据
     float vertices[] = {
         -0.5f, -0.5f, -0.5f,  0.0f, 0.0f,
-         0.5f, -0.5f, -0.5f,  1.0f, 0.0f,
-         0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
-         0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
+        0.5f, -0.5f, -0.5f,  1.0f, 0.0f,
+        0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
+        0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
         -0.5f,  0.5f, -0.5f,  0.0f, 1.0f,
         -0.5f, -0.5f, -0.5f,  0.0f, 0.0f,
-
+        
         -0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
-         0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
-         0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
-         0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
+        0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
+        0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
+        0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
         -0.5f,  0.5f,  0.5f,  0.0f, 1.0f,
         -0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
-
+        
         -0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
         -0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
         -0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
         -0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
         -0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
         -0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
-
-         0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
-         0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
-         0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
-         0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
-         0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
-         0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
-
+        
+        0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+        0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
+        0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
+        0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
+        0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
+        0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+        
         -0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
-         0.5f, -0.5f, -0.5f,  1.0f, 1.0f,
-         0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
-         0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
+        0.5f, -0.5f, -0.5f,  1.0f, 1.0f,
+        0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
+        0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
         -0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
         -0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
-
+        
         -0.5f,  0.5f, -0.5f,  0.0f, 1.0f,
-         0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
-         0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
-         0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+        0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
+        0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+        0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
         -0.5f,  0.5f,  0.5f,  0.0f, 0.0f,
         -0.5f,  0.5f, -0.5f,  0.0f, 1.0f
     };
@@ -243,82 +244,91 @@ Camera camera(glm::vec3(0.0f, 0.0f, 1.5f));
 float rad = 0;
 - (void)displayWithFrame:(AVFrame *)yuvFrame {
     
+    
+    
+    
+    
     //正方形的位置
     glm::vec3 cubePositions[] = {
-            glm::vec3( 0.0f,  0.0f,  0.0f),
-            glm::vec3( 2.0f,  5.0f, -15.0f),
-            glm::vec3(-1.5f, -2.2f, -2.5f),
-            glm::vec3(-3.8f, -2.0f, -12.3f),
-            glm::vec3( 2.4f, -0.4f, -3.5f),
-            glm::vec3(-1.7f,  3.0f, -7.5f),
-            glm::vec3( 1.3f, -2.0f, -2.5f),
-            glm::vec3( 1.5f,  2.0f, -2.5f),
-            glm::vec3( 1.5f,  0.2f, -1.5f),
-            glm::vec3(-1.3f,  1.0f, -1.5f)
-        };
+        glm::vec3( 0.0f,  0.0f,  0.0f),
+        glm::vec3( 2.0f,  5.0f, -15.0f),
+        glm::vec3(-1.5f, -2.2f, -2.5f),
+        glm::vec3(-3.8f, -2.0f, -12.3f),
+        glm::vec3( 2.4f, -0.4f, -3.5f),
+        glm::vec3(-1.7f,  3.0f, -7.5f),
+        glm::vec3( 1.3f, -2.0f, -2.5f),
+        glm::vec3( 1.5f,  2.0f, -2.5f),
+        glm::vec3( 1.5f,  0.2f, -1.5f),
+        glm::vec3(-1.3f,  1.0f, -1.5f)
+    };
     
     
     
     int videoWidth = yuvFrame->width;
     int videoHeight = yuvFrame->height;
-
+    
     if(videoWidth <= 0 || videoHeight<=0)
         return;
-
-    glEnable(GL_DEPTH_TEST);
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        glEnable(GL_DEPTH_TEST);
         //glDepthFunc(GL_ALWAYS);
         //glDepthMask(GL_FALSE);
         
-    glClearColor(0.2, 1.0, 1.0, 1.0);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-//    glViewport(0, 0, self.frame.size.width, self.frame.size.height);
+        glClearColor(0.2, 1.0, 1.0, 1.0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        //    glViewport(0, 0, self.frame.size.width, self.frame.size.height);
         
-   
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, _yTexture);
-    glTexImage2D(GL_TEXTURE_2D,0,GL_LUMINANCE,videoWidth,videoHeight,0,GL_LUMINANCE,GL_UNSIGNED_BYTE,yuvFrame->data[0]);
-    glUniform1i(glGetUniformLocation(_glProgram, "yTexture"), 0);
-
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, _uTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, videoWidth / 2, videoHeight / 2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, yuvFrame->data[1]);
-    glUniform1i(glGetUniformLocation(_glProgram, "uTexture"), 1);
-
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, _vTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, videoWidth / 2, videoHeight / 2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, yuvFrame->data[2]);
-    glUniform1i(glGetUniformLocation(_glProgram, "vTexture"), 2);
-
-    
-    //创建投影矩阵
-    glm::mat4 projection    = glm::mat4(1.0f);//单位矩阵初始化
-    projection = glm::perspective(glm::radians(camera.Zoom), (float)videoWidth / (float)videoHeight, 0.1f, 100.0f);
-    glUniformMatrix4fv(glGetUniformLocation(_glProgram,"projection"), 1, GL_FALSE,&projection[0][0]);
-    
-    // 相机/视图转换
-    glm::mat4 view = glm::mat4(1.0f);
-    view = camera.GetViewMatrix();
-    glUniformMatrix4fv(glGetUniformLocation(_glProgram,"view"), 1, GL_FALSE,&view[0][0]);
-    
-    //导入数据到gpu绘制
-    glBindVertexArray(_VAO);
-    
+        
+        
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, self->_yTexture);
+        glTexImage2D(GL_TEXTURE_2D,0,GL_LUMINANCE,videoWidth,videoHeight,0,GL_LUMINANCE,GL_UNSIGNED_BYTE,yuvFrame->data[0]);
+        glUniform1i(glGetUniformLocation(self->_glProgram, "yTexture"), 0);
+        
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, self->_uTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, videoWidth / 2, videoHeight / 2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, yuvFrame->data[1]);
+        glUniform1i(glGetUniformLocation(self->_glProgram, "uTexture"), 1);
+        
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, self->_vTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, videoWidth / 2, videoHeight / 2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, yuvFrame->data[2]);
+        glUniform1i(glGetUniformLocation(self->_glProgram, "vTexture"), 2);
+        
+        dispatch_async(dispatch_get_main_queue(), ^{});
+        //创建投影矩阵
+        glm::mat4 projection    = glm::mat4(1.0f);//单位矩阵初始化
+        projection = glm::perspective(glm::radians(camera.Zoom), (float)videoWidth / (float)videoHeight, 0.1f, 100.0f);
+        glUniformMatrix4fv(glGetUniformLocation(self->_glProgram,"projection"), 1, GL_FALSE,&projection[0][0]);
+        
+        // 相机/视图转换
+        glm::mat4 view = glm::mat4(1.0f);
+        view = camera.GetViewMatrix();
+        glUniformMatrix4fv(glGetUniformLocation(self->_glProgram,"view"), 1, GL_FALSE,&view[0][0]);
+        
+        //导入数据到gpu绘制
+        glBindVertexArray(self->_VAO);
+    });
     
     for (unsigned int i = 0; i < 10; i++){
         //把模型放到世界中  计算每个对象的模型矩阵，并在绘图前将其传递给着色器
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, cubePositions[i]);//模型位置
-//        float angle = 20.0f * i;
+        //        float angle = 20.0f * i;
         model = glm::rotate(model, glm::radians(rad), glm::vec3(1.0f, 0.3f, 0.5f));//模型旋转
-        glUniformMatrix4fv(glGetUniformLocation(_glProgram,"model"), 1, GL_FALSE,&model[0][0]);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            glUniformMatrix4fv(glGetUniformLocation(self->_glProgram,"model"), 1, GL_FALSE,&model[0][0]);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        });
     }
-    [glView.context presentRenderbuffer:GL_RENDERBUFFER];
-    //使用着色程序
-    glUseProgram(_glProgram);
-//    rad += 1;
-   
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self->glView.context presentRenderbuffer:GL_RENDERBUFFER];
+        //使用着色程序
+        glUseProgram(self->_glProgram);
+    });
+    rad += 1;
+    
 }
 
 - (void)setupFrameAndRenderBuffer

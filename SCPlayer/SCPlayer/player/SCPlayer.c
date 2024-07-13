@@ -8,7 +8,7 @@
 
 #include "SCPlayer.h"
 
-
+#include <libavutil/imgutils.h>
 /*
 Create by stan 2024-6-30
 */
@@ -354,7 +354,8 @@ static int audio_decode_frame(VideoState *is)
                                                           is->audio_frame.ch_layout.nb_channels,
                                                           out_count, AV_SAMPLE_FMT_S16, 0);
                 // 输出的音频包开辟空间 实际开辟的空间audio_buf_size，out_size想要分配空间的大小
-                av_fast_malloc(&is->audio_buf, &is->audio_buf_size, out_size);
+                unsigned int  malloc_size = 0;
+                av_fast_malloc(&is->audio_buf, &malloc_size, out_size);
                 // 音频重采样
                 len2 = swr_convert(is->audio_swr_ctx,
                                    out,
@@ -362,6 +363,8 @@ static int audio_decode_frame(VideoState *is)
                                    in,
                                    in_count);
                 // data_size = （len2）采样个数 x （nb_channels）音频通道数 x 位深
+                printf("len2=%d, nb_channels=%d, bytes_per_sample=%d\n",len2,is->audio_frame.ch_layout.nb_channels,
+                       av_get_bytes_per_sample(AV_SAMPLE_FMT_S16));
                 data_size = len2 * is->audio_frame.ch_layout.nb_channels * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
             }else{
                 // 不需要采样
@@ -371,8 +374,7 @@ static int audio_decode_frame(VideoState *is)
                                                        is->audio_frame.nb_samples,
                                                        is->audio_frame.format,
                                                        1);
-            }
-
+            }          
             //计算音频已经播放的时间
             if(!isnan(is->audio_frame.pts)){
                 /*
@@ -401,14 +403,15 @@ __OUT:
  */
 void sdl_audio_callback_1(void *userdata, uint8_t *stream, int len)
 {
-//    int len1 = 0;
+    int len1 = 0;
     int audio_size = 0;
 
     VideoState *is = (VideoState *)userdata;
-   
     is->out_audio_size = audio_decode_frame(is);
     
-    
+    //每次声卡要的数据
+    len = is->out_audio_size;
+    is->audio_buf_index = is->out_audio_size;
 //    while (len > 0){
 //
 //        if (is->audio_buf_index >= is->audio_buf_size){ // buf数据用完
@@ -896,10 +899,10 @@ int read_thread(void *arg){
 //            SDL_Delay(10);
 //            continue;
 //           }
-              if(is->videoq.size > MAX_QUEUE_SIZE){
-                  SDL_Delay(10);
-                  continue;
-                 }
+//              if(is->videoq.size > MAX_QUEUE_SIZE){
+//                  SDL_Delay(10);
+//                  continue;
+//                 }
         //从上下文中读取包
         ret = av_read_frame(is->ic,pkt);
         if(ret < 0){
@@ -1090,10 +1093,10 @@ double get_maste_clock(VideoState *is){
 }
 
 static int video_open(VideoState *is){
-    int w,h;
+//    int w,h;
 
-    w = screen_width ? screen_width : default_width;
-    h = screen_height ? screen_height : default_height;
+//    w = screen_width ? screen_width : default_width;
+//    h = screen_height ? screen_height : default_height;
     
 //    if(!window_title)
 //        window_title = input_filename;
@@ -1105,8 +1108,8 @@ static int video_open(VideoState *is){
 //        SDL_SetWindowFullscreen(win,SDL_WINDOW_FULLSCREEN_DESKTOP);
 //    SDL_ShowWindow(win);
 
-    is->width = w;
-    is->height = h;
+//    is->width = w;
+//    is->height = h;
    
     return 0;
 }
@@ -1153,6 +1156,8 @@ static void video_display(VideoState *is){
 //      SDL_RenderPresent(renderer);
  
       is->fn_call(frame,1,is);
+//      int w_linesize = av_image_get_linesize(AV_PIX_FMT_YUVJ420P, frame->width, 0);
+//      int h_linesize = av_image_get_linesize(AV_PIX_FMT_YUVJ420P, frame->height, 0);
       fream_queue_pop(&is->pictq);
 }
 
@@ -1166,92 +1171,93 @@ void video_refresh_timer(void *userdata){
 
     if(is->video_st){
        
-//        if(is->pictq.size == 0){
-//            /*
-//            if the queue is empty, so we shoud be as fast as checking queue of picture
-//            如果视频queue是空的，延时1毫秒 快速的检测
-//            */
-//            schedule_refresh(is,1);
-//        } else {
-//            /*
-//             计算下一帧的显示时间
-//            */
-//
-//            vp = frame_queue_peek(&is->pictq);//队列中取到要渲染的frame 生产 > 消费，一般都可以读取到帧
-//            is->video_current_pts = vp->pts;//对is的域赋值，当前video的pts
-//            is->video_current_pts_time = av_gettime();//当前视频帧显示时间
-//
-//            if(is->frame_last_pts == 0){//一开始时 frame_last_pts 是为 0
-//                delay = 0;
-//            } else {
-//                //视频帧的时间间隔和下一帧。当前的pts - 上一帧的pts
-//                delay = vp->pts - is->frame_last_pts;
-//            }
-//
-//            if(delay <= 0 || delay >= 1.0){
-//                delay = is->frame_last_delay;
-//            }
-//
-//            //计算完成，跟新frame_last_delay，frame_last_pts
-//            is->frame_last_delay = delay;
-//            is->frame_last_pts = vp->pts;
-//
-//            //推算下一帧视频时间和音频同步，计算delay来同步
-//            if(is->av_sync_type == AV_SYNC_AUDIO_MASTER){
-//               ref_clock = get_maste_clock(is);
-//               diff = vp->pts - ref_clock;//视频时间下一帧的 - 音频时间
-//            }
-//
-//          /* Skip or repeat the frame. Take delay into account
-//          FFPlay still doesn't "know if this is the best guess."
-//
-//                sync_threshold   视频当前帧和下一帧的时间比较  视频自己的delay
-//                          diff   是视频时间和音频时间比较     视频和音频
-//
-//           视频时间 - 音频audio_clock的时间     当前的pts - 上一帧的pts，
-//           vp->pts - ref_clock               vp->pts - is->frame_last_pts
-//                  |                                  |
-//                diff                               delay
-//
-//            ---------------- 0 ---------------> x
-//              -3      -1           1       3
-//             diff   delay        delay   diff
-//
-//             以diff为准来修正delay
-//           */
-//            sync_threshold = (delay > 0.01) ? delay : 0.01;
-//            if(fabs(diff) < 10.0){//在 10 ms内认为同步
-//                if(diff <= - sync_threshold){
-//                    delay = 0;
-//                }else if(diff >= sync_threshold){//视频播放到前面要等待
-//                    delay = 2*delay;
-//                }
-//            }
-//
-//
-//            is->frame_timer += delay;//推算出下一帧的显示时间点,这个是和系统时间维护的一个时间
-//            /* computer the REAL delay
-//             一帧确定好系统时间后，后面就将要播放的帧的时间换算成系统时间，
-//              如果发现要播放的帧的时间落后于系统时间就将其播放出来。
-//            */
-//            //查看这一帧是不是要显示，对比推算的时间和当前时间，如果推算的时间等于当前时间，立刻马上显示
-//            actual_delay = is->frame_timer - (av_gettime()/ch_µs_to_s);
-//            if(actual_delay < 0.010){
-//                actual_delay = 0.010;
-//            }
-//
-//            //到下个时间点刷新
-//            schedule_refresh(is,(int)(actual_delay * 1000 + 0.5));
-//
-//            printf("schedule_refresh_time= %dms\n",(int)(actual_delay * 1000 + 0.5));
-//
-//           /* show the picture!
-//           下一帧的时间间隔计算结束
-//           展示当前帧
-//           */
+        if(is->pictq.size == 0){
+            /*
+            if the queue is empty, so we shoud be as fast as checking queue of picture
+            如果视频queue是空的，延时1毫秒 快速的检测
+            */
+            schedule_refresh(is,1);
+        } else {
+            /*
+             计算下一帧的显示时间
+            */
+
+            vp = frame_queue_peek(&is->pictq);//队列中取到要渲染的frame 生产 > 消费，一般都可以读取到帧
+            is->video_current_pts = vp->pts;//对is的域赋值，当前video的pts
+            is->video_current_pts_time = av_gettime();//当前视频帧显示时间
+
+            if(is->frame_last_pts == 0){//一开始时 frame_last_pts 是为 0
+                delay = 0;
+            } else {
+                //视频帧的时间间隔和下一帧。当前的pts - 上一帧的pts
+                delay = vp->pts - is->frame_last_pts;
+            }
+
+            if(delay <= 0 || delay >= 1.0){
+                delay = is->frame_last_delay;
+            }
+
+            //计算完成，跟新frame_last_delay，frame_last_pts
+            is->frame_last_delay = delay;
+            is->frame_last_pts = vp->pts;
+
+            //推算下一帧视频时间和音频同步，计算delay来同步
+            if(is->av_sync_type == AV_SYNC_AUDIO_MASTER){
+               ref_clock = get_maste_clock(is);
+               diff = vp->pts - ref_clock;//视频时间下一帧的 - 音频时间
+            }
+
+          /* Skip or repeat the frame. Take delay into account
+          FFPlay still doesn't "know if this is the best guess."
+
+                sync_threshold   视频当前帧和下一帧的时间比较  视频自己的delay
+                          diff   是视频时间和音频时间比较     视频和音频
+
+           视频时间 - 音频audio_clock的时间     当前的pts - 上一帧的pts，
+           vp->pts - ref_clock               vp->pts - is->frame_last_pts
+                  |                                  |
+                diff                               delay
+
+            ---------------- 0 ---------------> x
+              -3      -1           1       3
+             diff   delay        delay   diff
+
+             以diff为准来修正delay
+           */
+            sync_threshold = (delay > 0.01) ? delay : 0.01;
+            if(fabs(diff) < 10.0){//在 10 ms内认为同步
+                if(diff <= - sync_threshold){
+                    delay = 0;
+                }else if(diff >= sync_threshold){//视频播放到前面要等待
+                    delay = 2*delay;
+                }
+            }
+
+
+            is->frame_timer += delay;//推算出下一帧的显示时间点,这个是和系统时间维护的一个时间
+            /* computer the REAL delay
+             一帧确定好系统时间后，后面就将要播放的帧的时间换算成系统时间，
+              如果发现要播放的帧的时间落后于系统时间就将其播放出来。
+            */
+            //查看这一帧是不是要显示，对比推算的时间和当前时间，如果推算的时间等于当前时间，立刻马上显示
+            actual_delay = is->frame_timer - (av_gettime()/ch_µs_to_s);
+            if(actual_delay < 0.010){
+                actual_delay = 0.010;
+            }
+
+            //到下个时间点刷新
+            schedule_refresh(is,(int)(actual_delay * 1000 + 0.5));
+            printf("schedule_refresh_time= %dms\n",(int)(actual_delay * 1000 + 0.5));
+
+           /* show the picture!
+           下一帧的时间间隔计算结束
+           展示当前帧
+           */
 //           schedule_refresh(is,40);
+            is->delay_video_time = (int)(actual_delay * 1000 + 0.5);
+            printf("actual_delay:%f\n",actual_delay);
            video_display(is);
-//        }
+        }
     } else {
         schedule_refresh(is,100);//等待打开视频流
     }
@@ -1303,9 +1309,16 @@ static void sdl_event_loop(VideoState *is){
 //    }
     for(;;){
         video_refresh_timer(is);
-        SDL_Delay(30);
+        SDL_Delay(is->delay_video_time);
     }
     
+}
+
+
+int video_loop(void *arg){
+    VideoState *is = (VideoState*)arg;
+    sdl_event_loop(is);
+    return 0;
 }
 
 /*
@@ -1327,13 +1340,17 @@ static void sdl_event_loop(VideoState *is){
 */
 
 int scplayer(frame_call_bacl fn_call){
-    int ret  = 0;
-    int flags = 0;
+//    int ret  = 0;
+//    int flags = 0;
     VideoState *is;
 
     av_log_set_level(AV_LOG_INFO);
 
     input_filename = "/Users/stan/Desktop/1280x720.mp4";
+//    input_filename = "/Users/stan/Desktop/mourse.MP4";
+//    input_filename = "/Users/stan/Desktop/1.mp4";
+//    input_filename = "/Users/stan/Desktop/1.MOV";
+    
 
 //    flags =  SDL_INIT_TIMER;
 //    if(SDL_Init(flags)){
@@ -1362,7 +1379,10 @@ int scplayer(frame_call_bacl fn_call){
         do_exit(NULL);
     }
 
-    sdl_event_loop(is);//循环读取事件，主要是视频帧显示事件
+    
+    SDL_CreateThread(video_loop,"video_loop",is);
+     
+//    sdl_event_loop(is);//循环读取事件，主要是视频帧显示事件
     return 0;
 }
 /*

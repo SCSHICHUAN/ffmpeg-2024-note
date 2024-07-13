@@ -22,6 +22,11 @@
 #include "SCPlayer.h"
 
 ViewController *c_self;
+bool forward_B;
+bool back_B;
+bool left_B;
+bool right_B;
+bool right_R_B;
 
 @interface ViewController ()  {
     SCRender *render;
@@ -62,19 +67,17 @@ ViewController *c_self;
     });
 }
 
+
 int when_frame_push(AVFrame *frame, int flag,void *opaque){
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        
     if(flag == 0){
-        [c_self initAudio:opaque];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [c_self initAudio:opaque];
+        });
     }else if(flag == 1){
-       [c_self->render displayWithFrame:frame];
+        [c_self->render displayWithFrame:frame];
     }
     
-    });
-    
-//    printf("fram.size = %d,flat = %d \n",frame->pkt_size,flag);
+    //    printf("fram.size = %d,flat = %d \n",frame->pkt_size,flag);
     return 0;
 }
 
@@ -97,12 +100,12 @@ int when_frame_push(AVFrame *frame, int flag,void *opaque){
     self.audio_pak_count = 0;
     self.lab.text = @"拉流中请稍等...";
     
-//    dispatch_async(dispatch_get_global_queue(0, 0), ^{
-//        [self run];
-//    });
-        dispatch_async(dispatch_get_global_queue(0, 0), ^{
-            scplayer(when_frame_push);
-        });
+    //    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+    //        [self run];
+    //    });
+    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+        scplayer(when_frame_push);
+    });
     
 }
 - (void)viewDidLoad {
@@ -173,25 +176,17 @@ int when_frame_push(AVFrame *frame, int flag,void *opaque){
     lab.textColor = UIColor.whiteColor;
     [self.view addSubview:lab];
     self.lab = lab;
-    view = self.view;
-    arry = [NSMutableArray array];
-    count = 0;
     c_self = self;
-   render = [[SCRender alloc] initWithFrame:CGRectMake(0, 300, kWidth, kWidth*(3/4.0))];
+    render = [[SCRender alloc] initWithFrame:CGRectMake(0, 300, kWidth, kWidth*(3/4.0))];
     [self.view addSubview:render];
     [self.timer fire];
 }
 
-bool forward_B;
-bool back_B;
 
-bool left_B;
-bool right_B;
-
-bool right_R_B;
 
 -(void)testClick{
-  forward_B = !forward_B;
+    forward_B = !forward_B;
+    NSLog(@"前进");
 }
 -(void)testClick1{
     back_B = !back_B;
@@ -225,34 +220,6 @@ bool right_R_B;
     }
     
 }
-
-
-#define INBUF_SIZE 4096
-
-#define WORD uint16_t
-#define DWORD uint32_t
-#define LONG int32_t
-
-int wellDone;
-#pragma pack(2)
-UIView *view;
-NSMutableArray *arry;
-int count;
-int stride = 2;
-int stride_big = 0;
-bool onec = YES;
-
-
-static int decode_write_frame(AVFrame *frame)
-{
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [c_self->render displayWithFrame:frame];
-    });
-    return 0;
-}
-
-
-
 
 
 

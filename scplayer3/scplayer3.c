@@ -487,6 +487,7 @@ static int audio_decode_frame(VideoState *is)
                                                           out_count, AV_SAMPLE_FMT_S16, 0);
                 // 输出的音频包开辟空间 实际开辟的空间audio_buf_size，out_size想要分配空间的大小
                 av_fast_malloc(&is->audio_buf, &is->audio_buf_size, out_size);
+                printf("开辟:%d\n",is->audio_buf_size);
                 // 音频重采样
                 len2 = swr_convert(is->audio_swr_ctx,
                                    out,
@@ -548,6 +549,7 @@ static void sdl_audio_callback(void *userdata, Uint8 *stream, int len)
                 is->audio_buf = NULL;
             }else{ // 解码到数据
                 is->audio_buf_size = audio_size;
+                printf("解码:%d\n",is->audio_buf_size);
             }
             is->audio_buf_index = 0; // 游标在开始位置
         }
@@ -1169,6 +1171,7 @@ double get_audio_clock(VideoState *is){
 
     pts = is->audio_clock;/* maintained in the audio thread 在音频线程中维护*/
     hw_buf_size = is->audio_buf_size - is->audio_buf_index;// 当前缓冲区数据还剩余的
+    printf("clock:%d\n",is->audio_buf_size);
     bytes_per_sec = 0;
     n = is->audio_ctx->ch_layout.nb_channels * 2;//每个音频样本占用2个字节（通常是16位，等于2字节）。
     if(is->audio_st){

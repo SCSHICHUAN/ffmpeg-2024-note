@@ -43,10 +43,10 @@
 static const char *input_filename;
 static const char *window_title;
 
-static int default_width = 1080; //期望显示的宽
-static int default_height = 720; //期望显示的高
-static int screen_width  = 0;
-static int screen_height = 0;
+//static int default_width = 1080; //期望显示的宽
+//static int default_height = 720; //期望显示的高
+//static int screen_width  = 0;
+//static int screen_height = 0;
 
 //static SDL_Window      *win;
 //static SDL_Renderer    *renderer;
@@ -176,6 +176,7 @@ typedef struct VideoState{
 //    SDL_Texture     *texture;   //纹理
     FrameQueue      pictq;      //储存解码后的视频帧
     int width, height, xleft, ytop;//视频在SDL窗口位置和大小
+    uint32_t   delay_video_time;
   
     //线程和退出
     SDL_Thread      *read_tid;  //读取数据线程
@@ -191,5 +192,6 @@ typedef struct VideoState{
 
 int scplayer(frame_call_bacl fn_call);
 void sdl_audio_callback_1(void *userdata, uint8_t *stream, int len);
+//static void sdl_event_loop(VideoState *is,int ms);
 
 #endif /* SCPlayer_h */
