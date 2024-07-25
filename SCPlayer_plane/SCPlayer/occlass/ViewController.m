@@ -110,9 +110,11 @@ int when_frame_push(AVFrame *frame, int flag,void *opaque){
     //    });
 
     // 获取视频文件路径
-    NSString *filePath = [[NSBundle mainBundle] pathForResource:@"fcz" ofType:@"mp4"];
-    const char *filePathCStr = [filePath cStringUsingEncoding:NSUTF8StringEncoding];
-    scplayer(when_frame_push,"http://playertest.longtailvideo.com/adaptive/bipbop/gear4/prog_index.m3u8");
+//    NSString *filePath = [[NSBundle mainBundle] pathForResource:@"fcz" ofType:@"mp4"];
+//    const char *filePathCStr = [filePath cStringUsingEncoding:NSUTF8StringEncoding];
+//    scplayer(when_frame_push,"http://playertest.longtailvideo.com/adaptive/bipbop/gear4/prog_index.m3u8");
+//    scplayer(when_frame_push,"https://sdk-release.qnsdk.com/flv.flv");
+
 //    scplayer(when_frame_push,filePathCStr);
     
     
