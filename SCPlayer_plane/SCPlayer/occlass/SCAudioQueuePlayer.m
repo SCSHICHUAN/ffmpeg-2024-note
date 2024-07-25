@@ -98,8 +98,6 @@ void OutputBufferCallback(void *inUserData, AudioQueueRef inAQ, AudioQueueBuffer
     sc_self = self;
     self->is = is;
     
-    
-    
     /// 播放器播放时的ffmpeg采样格式
     /// 指定了播放器在读取数据时的数据长度(一帧多少个字节)
     AudioStreamBasicDescription asbd;
@@ -116,7 +114,7 @@ void OutputBufferCallback(void *inUserData, AudioQueueRef inAQ, AudioQueueBuffer
     /// 每个通道一帧占的位宽
     asbd.mBitsPerChannel = 16;
     /// 每一帧所占的字节数
-    asbd.mBytesPerFrame = 4;
+    asbd.mBytesPerFrame = is->audioInfo.channels * 2;
     /// 一个packet所占的字节数
     asbd.mBytesPerPacket = asbd.mFramesPerPacket * asbd.mBytesPerFrame;
     /// kLinearPCMFormatFlagIsSignedInteger: 存储的数据类型

@@ -1092,7 +1092,7 @@ double get_maste_clock(VideoState *is){
     }
 }
 
-static int video_open(VideoState *is){
+//static int video_open(VideoState *is){
 //    int w,h;
 
 //    w = screen_width ? screen_width : default_width;
@@ -1111,9 +1111,36 @@ static int video_open(VideoState *is){
 //    is->width = w;
 //    is->height = h;
    
-    return 0;
-}
+//    return 0;
+//}
 
+
+
+void rotate90AVFrame(AVFrame *srcFrame, AVFrame *dstFrame) {
+        int width = srcFrame->width;
+        int height = srcFrame->height;
+
+        // 目标 AVFrame 的宽度和高度
+        int dst_width = width;
+        int dst_height = height;
+
+        // 分配目标 AVFrame 的缓冲区
+        av_image_alloc(dstFrame->data, dstFrame->linesize, dst_width, dst_height, srcFrame->format, 24);
+
+        // 创建旋转的 SwsContext
+        struct SwsContext *sws_ctx = sws_getContext(width, height, srcFrame->format,
+                                                    dst_width, dst_height, srcFrame->format,
+                                                    SWS_BILINEAR, NULL, NULL, NULL);
+
+        // 旋转 90 度
+        int dst_stride[AV_NUM_DATA_POINTERS] = { dstFrame->linesize[0], dstFrame->linesize[1], dstFrame->linesize[2] };
+        uint8_t *dst_slice[AV_NUM_DATA_POINTERS] = { dstFrame->data[0], dstFrame->data[1], dstFrame->data[2] };
+
+        sws_scale(sws_ctx, (const uint8_t *const *)srcFrame->data, srcFrame->linesize, 0, height, dst_slice, dst_stride);
+
+        // 释放 SwsContext
+//        sws_freeContext(sws_ctx);
+}
 
 
 static void video_display(VideoState *is){
@@ -1121,8 +1148,8 @@ static void video_display(VideoState *is){
       AVFrame *frame = NULL;
 
 //      SDL_Rect rect;
-      if(!is->width)
-           video_open(is);
+//      if(!is->width)
+//           video_open(is);
 
       vp = frame_queue_peek(&is->pictq);
       frame = vp->frame;
@@ -1154,8 +1181,43 @@ static void video_display(VideoState *is){
 //      SDL_RenderClear(renderer);
 //      SDL_RenderCopy(renderer,is->texture,NULL,&rect);
 //      SDL_RenderPresent(renderer);
- 
-      is->fn_call(frame,1,is);
+//        AVFrame *srcFrame = frame;
+//        AVFrame *dstFrame = av_frame_alloc();
+//
+//        int width = frame->width; // 原始视频宽度
+//        int height = frame->height; // 原始视频高度
+//        int frameSize = width * height * 3 / 2; // YUV420 格式下帧的大小
+//
+//        // 分配缓冲区来存储源数据
+//        uint8_t *buffer = (uint8_t *)av_malloc(frameSize);
+//
+//        // 示例数据填充，可以替换为实际的 YUV 数据
+//        // 这里使用 memset 只是为了初始化示例，实际使用中需要读取真实数据
+//        memset(buffer, 128, frameSize); // 假设数据填充为128（中性灰）
+//
+//        // 填充源 AVFrame 的数据
+//        av_image_fill_arrays(srcFrame->data, srcFrame->linesize, buffer, AV_PIX_FMT_YUV420P, width, height, 1);
+//        srcFrame->format = AV_PIX_FMT_YUV420P;
+//        srcFrame->width = width;
+//        srcFrame->height = height;
+//
+//        // 设置目标 AVFrame 的属性
+//        dstFrame->format = srcFrame->format;
+//        dstFrame->width = height;  // 旋转后的宽度
+//        dstFrame->height = width;  // 旋转后的高度
+
+        // 旋转 AVFrame
+//        rotate90AVFrame(srcFrame, dstFrame);
+
+        // 此时 dstFrame 包含了旋转后的图像数据
+        // 你可以在这里继续处理 dstFrame，例如渲染或进一步处理
+
+        // 清理
+//        av_free(buffer);
+//        av_frame_free(&srcFrame);
+      
+    is->fn_call(frame,1,is);
+//    av_frame_free(&dstFrame);
 //      int w_linesize = av_image_get_linesize(AV_PIX_FMT_YUVJ420P, frame->width, 0);
 //      int h_linesize = av_image_get_linesize(AV_PIX_FMT_YUVJ420P, frame->height, 0);
 }

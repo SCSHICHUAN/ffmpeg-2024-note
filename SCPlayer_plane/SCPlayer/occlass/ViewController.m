@@ -17,6 +17,7 @@
 #import <GLKit/GLKit.h>
 #import "SCRender.h"
 #define kWidth ([UIScreen mainScreen].bounds.size.width)
+#define kHeight ([UIScreen mainScreen].bounds.size.height)
 #include "SCPlayer.h"
 #import "SCAudioQueuePlayer.h"
 #include "SCPlayer.h"
@@ -87,15 +88,14 @@ int when_frame_push(AVFrame *frame, int flag,void *opaque){
 }
 
 
+
+
 -(void)initAudio:(void *)opaque{
     VideoState *is = (VideoState *)opaque;
     SCAudioQueuePlayer *aup = [[SCAudioQueuePlayer alloc] init];
     [aup initializeAudioQueue:is];
     [aup play];
 }
-
-
-
 
 
 
@@ -110,9 +110,10 @@ int when_frame_push(AVFrame *frame, int flag,void *opaque){
     //    });
 
     // 获取视频文件路径
-    NSString *filePath = [[NSBundle mainBundle] pathForResource:@"sch" ofType:@"mp4"];
+    NSString *filePath = [[NSBundle mainBundle] pathForResource:@"fcz" ofType:@"mp4"];
     const char *filePathCStr = [filePath cStringUsingEncoding:NSUTF8StringEncoding];
-    scplayer(when_frame_push,filePathCStr);
+    scplayer(when_frame_push,"http://playertest.longtailvideo.com/adaptive/bipbop/gear4/prog_index.m3u8");
+//    scplayer(when_frame_push,filePathCStr);
     
     
 }
@@ -185,7 +186,8 @@ int when_frame_push(AVFrame *frame, int flag,void *opaque){
     [self.view addSubview:lab];
     self.lab = lab;
     c_self = self;
-    render = [[SCRender alloc] initWithFrame:CGRectMake(0, 300, kWidth, kWidth*(3/4.0))];
+    render = [[SCRender alloc] initWithFrame:CGRectMake(0, 0, kWidth, kWidth*(3/4.0))];
+    render = [[SCRender alloc] initWithFrame:CGRectMake(88, 0, kHeight, kHeight)];
     [self.view addSubview:render];
     [self.timer fire];
 }

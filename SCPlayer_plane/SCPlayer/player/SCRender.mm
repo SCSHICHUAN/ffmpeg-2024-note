@@ -160,11 +160,36 @@
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+
+
+// 检查 data 是否有效，并返回 bool 类型的结果
+bool isDataValid(uint8_t *data, size_t length) {
+   
+    if (data == NULL) {
+        return false; // 指针为空
+    }
+    // 检查是否为字符串，首字节为 '\0'
+    if (length == 0 || data[0] == '\0') {
+        return false; // 空字符串或无数据
+    }
+    
+    // 对于二进制数据，检查是否全为零
+    for (size_t i = 0; i < length; i++) {
+        if (data[i] != 0) {
+            return true; // 找到非零字节
+        }
+    }
+    return false; // 全部为零
+}
+
 - (void)displayWithFrame:(AVFrame *)yuvFrame bb:(void (^)(BOOL success))completionBlock {
     
     
     int videoWidth = yuvFrame->width;
     int videoHeight = yuvFrame->height;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self reSize:yuvFrame];
+    });
     
 //    int tmp = videoHeight;
 //    videoHeight = videoWidth;
@@ -173,47 +198,67 @@
 
     dispatch_async(dispatch_get_main_queue(), ^{
         
+        uint8_t *dataY = yuvFrame->data[0];
+        uint8_t *dataU = yuvFrame->data[1];
+        uint8_t *dataV = yuvFrame->data[2];
+        
+        
+        if((isDataValid(dataY, sizeof(dataY)) && isDataValid(dataU, sizeof(dataU)) && isDataValid(dataV, sizeof(dataV)))){
+            glClearColor(0.0, 4.0, 0, 0);
+            glClear(GL_COLOR_BUFFER_BIT);
+            glEnable(GL_TEXTURE_2D);
+            glUseProgram(self->_glProgram);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, self->_yTexture);
+            glTexImage2D(GL_TEXTURE_2D,0,GL_LUMINANCE,videoWidth,videoHeight,0,GL_LUMINANCE,GL_UNSIGNED_BYTE,yuvFrame->data[0]);
+            glUniform1i(glGetUniformLocation(self->_glProgram, "yTexture"), 0);
+
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, self->_uTexture);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, videoWidth / 2, videoHeight / 2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, yuvFrame->data[1]);
+            glUniform1i(glGetUniformLocation(self->_glProgram, "uTexture"), 1);
+
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, self->_vTexture);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, videoWidth / 2, videoHeight / 2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, yuvFrame->data[2]);
+            glUniform1i(glGetUniformLocation(self->_glProgram, "vTexture"), 2);
+
+           
+            self.testD = 0;
+            // create transformations
+            glm::mat4 transform = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
+            transform = glm::translate(transform, glm::vec3(0.0f, 0.0f, 0.0f));
+            transform = glm::rotate(transform, (float)self.testD, glm::vec3(0.0f, 1.0f, 0.0f));
+            
+            // get matrix's uniform location and set matrix
+            glUseProgram(self->_glProgram);
+            unsigned int transformLoc = glGetUniformLocation(self->_glProgram, "transform");
+            glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(transform));
+            
+            
+            //导入数据到gpu绘制
+            glBindVertexArray(self->_VAO);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            [self->glView.context presentRenderbuffer:GL_RENDERBUFFER];
+            
+            completionBlock(YES);
+        }
+        
        
-        glClearColor(0.0, 4.0, 0, 0);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glEnable(GL_TEXTURE_2D);
-        glUseProgram(self->_glProgram);
-
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, self->_yTexture);
-        glTexImage2D(GL_TEXTURE_2D,0,GL_LUMINANCE,videoWidth,videoHeight,0,GL_LUMINANCE,GL_UNSIGNED_BYTE,yuvFrame->data[0]);
-        glUniform1i(glGetUniformLocation(self->_glProgram, "yTexture"), 0);
-
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, self->_uTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, videoWidth / 2, videoHeight / 2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, yuvFrame->data[1]);
-        glUniform1i(glGetUniformLocation(self->_glProgram, "uTexture"), 1);
-
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, self->_vTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, videoWidth / 2, videoHeight / 2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, yuvFrame->data[2]);
-        glUniform1i(glGetUniformLocation(self->_glProgram, "vTexture"), 2);
-
-       
-        self.testD = 0;
-        // create transformations
-        glm::mat4 transform = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
-        transform = glm::translate(transform, glm::vec3(0.0f, 0.0f, 0.0f));
-        transform = glm::rotate(transform, (float)self.testD, glm::vec3(0.0f, 1.0f, 0.0f));
-        
-        // get matrix's uniform location and set matrix
-        glUseProgram(self->_glProgram);
-        unsigned int transformLoc = glGetUniformLocation(self->_glProgram, "transform");
-        glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(transform));
-        
-        
-        //导入数据到gpu绘制
-        glBindVertexArray(self->_VAO);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-        [self->glView.context presentRenderbuffer:GL_RENDERBUFFER];
-        completionBlock(YES);
     });
 
+}
+
+
+-(void)reSize:(AVFrame *)frame{
+    CGFloat w = frame->width;
+    CGFloat h = frame->height;
+    if(w > 0 & h >0){
+        //glView.frame = CGRectMake(glView.frame.origin.x, glView.frame.origin.y, glView.frame.size.width, glView.frame.size.width*h/w);
+        glView.frame = CGRectMake(glView.frame.origin.x, glView.frame.origin.y, glView.frame.size.height*w/h, glView.frame.size.height);
+    }
+   
 }
 
 @end
