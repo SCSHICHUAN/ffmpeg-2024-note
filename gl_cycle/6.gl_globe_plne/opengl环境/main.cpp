@@ -108,7 +108,7 @@ void loadTexture(unsigned int &texture) {
 
     int width, height, nrChannels;
     stbi_set_flip_vertically_on_load(true); // 翻转Y轴
-    unsigned char *data = stbi_load("./src/dd.png", &width, &height, &nrChannels, 0);
+    unsigned char *data = stbi_load("./src/cc.png", &width, &height, &nrChannels, 0);
     if (data) {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
         glGenerateMipmap(GL_TEXTURE_2D);
@@ -201,6 +201,8 @@ int main() {
 
         // 清除缓冲
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glClearColor(0.2f, 0.3f, 0.3f, 1.0f);//清空色
+
 
         // 绑定纹理
         glActiveTexture(GL_TEXTURE0);
@@ -229,7 +231,14 @@ int main() {
             model = glm::rotate(model, glm::radians(angle), glm::vec3(1.0f, 0.3f, 0.5f));//模型旋转
             ourShader.setMat4("model", model);
             
-            glDrawElements(GL_TRIANGLES, numSegments * numLatitudes * 6, GL_UNSIGNED_INT, 0);
+           glDrawElements(GL_TRIANGLES, numSegments * numLatitudes * 6, GL_UNSIGNED_INT, 0);
+            
+            
+             // 绘制每一条纬线
+            for (int i = 0; i < numLatitudes; ++i) {
+                glDrawArrays(GL_LINE_LOOP, i * numSegments, numSegments);
+            }
+            
             
         }
         
