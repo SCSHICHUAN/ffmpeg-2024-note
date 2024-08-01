@@ -272,7 +272,7 @@ static Frame *frame_queue_peek(FrameQueue *fq){
     return &fq->queue[fq->rindex];
 }
 //fq_4.释放已经渲染位置的的帧，读帧的index调到1
-void fream_queue_pop(FrameQueue *fq){
+static void fream_queue_pop(FrameQueue *fq){
     Frame *vp = &fq->queue[fq->rindex];
     av_frame_unref(vp->frame);//结构中引用的所有数据
     if(++fq->rindex >= VIDEO_PICTURE_QUEUE_SIZE)
@@ -363,8 +363,8 @@ static int audio_decode_frame(VideoState *is)
                                    in,
                                    in_count);
                 // data_size = （len2）采样个数 x （nb_channels）音频通道数 x 位深
-//                printf("len2=%d, nb_channels=%d, bytes_per_sample=%d\n",len2,is->audio_frame.ch_layout.nb_channels,
-//                       av_get_bytes_per_sample(AV_SAMPLE_FMT_S16));
+                printf("len2=%d, nb_channels=%d, bytes_per_sample=%d\n",len2,is->audio_frame.ch_layout.nb_channels,
+                       av_get_bytes_per_sample(AV_SAMPLE_FMT_S16));
                 data_size = len2 * is->audio_frame.ch_layout.nb_channels * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
             }else{
                 // 不需要采样
@@ -1158,6 +1158,7 @@ static void video_display(VideoState *is){
       is->fn_call(frame,1,is);
 //      int w_linesize = av_image_get_linesize(AV_PIX_FMT_YUVJ420P, frame->width, 0);
 //      int h_linesize = av_image_get_linesize(AV_PIX_FMT_YUVJ420P, frame->height, 0);
+      fream_queue_pop(&is->pictq);
 }
 
 //刷新视频帧
@@ -1254,7 +1255,7 @@ void video_refresh_timer(void *userdata){
            */
 //           schedule_refresh(is,40);
             is->delay_video_time = (int)(actual_delay * 1000 + 0.5);
-//            printf("actual_delay:%f\n",actual_delay);
+            printf("actual_delay:%f\n",actual_delay);
            video_display(is);
         }
     } else {
@@ -1338,14 +1339,14 @@ int video_loop(void *arg){
 13. 收尾，释放资源
 */
 
-int  scplayer(frame_call_bacl fn_call,const char *url){
+int scplayer(frame_call_bacl fn_call){
 //    int ret  = 0;
 //    int flags = 0;
     VideoState *is;
 
     av_log_set_level(AV_LOG_INFO);
 
-    input_filename = url;
+    input_filename = "/Users/stan/Desktop/demo.mp4";
 //    input_filename = "/Users/stan/Desktop/mourse.MP4";
 //    input_filename = "/Users/stan/Desktop/1.mp4";
 //    input_filename = "/Users/stan/Desktop/1.MOV";

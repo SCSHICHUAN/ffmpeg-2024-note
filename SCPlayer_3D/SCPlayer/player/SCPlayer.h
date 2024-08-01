@@ -190,9 +190,8 @@ typedef struct VideoState{
 }VideoState;
 
 
-int scplayer(frame_call_bacl fn_call,const char *url);
+int scplayer(frame_call_bacl fn_call);
 void sdl_audio_callback_1(void *userdata, uint8_t *stream, int len);
 //static void sdl_event_loop(VideoState *is,int ms);
-void fream_queue_pop(FrameQueue *fq);
 
 #endif /* SCPlayer_h */

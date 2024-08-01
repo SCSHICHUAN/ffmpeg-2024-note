@@ -693,8 +693,6 @@
 		F66B2056294F380D00888396 /* projection.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = projection.inl; sourceTree = "<group>"; };
 		F66B2057294F380D00888396 /* type_aligned.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = type_aligned.hpp; sourceTree = "<group>"; };
 		F695BEBD2956F0A900EBFE1B /* Camera.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Camera.h; sourceTree = "<group>"; };
-		F6C755252C5A6B77006EFCDF /* dd.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = dd.png; path = ../../../../../../../Desktop/dd.png; sourceTree = "<group>"; };
-		F6C755262C5A6B7A006EFCDF /* cc.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = cc.png; path = ../../../../../../../Desktop/cc.png; sourceTree = "<group>"; };
 		F6C755272C5A6C29006EFCDF /* cc.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = cc.png; path = "opengl环境/src/cc.png"; sourceTree = SOURCE_ROOT; };
 		F6C755282C5A6C29006EFCDF /* dd.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = dd.png; path = "opengl环境/src/dd.png"; sourceTree = SOURCE_ROOT; };
 		F6C755292C5A6C32006EFCDF /* dd.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = dd.png; path = "opengl环境/src/dd.png"; sourceTree = SOURCE_ROOT; };
@@ -1092,9 +1090,7 @@
 		F66B1CF92948CC9F00888396 /* src */ = {
 			isa = PBXGroup;
 			children = (
-				F6C755262C5A6B7A006EFCDF /* cc.png */,
 				F6C7552A2C5A6C32006EFCDF /* cc.png */,
-				F6C755252C5A6B77006EFCDF /* dd.png */,
 				F6C755292C5A6C32006EFCDF /* dd.png */,
 				F66B1CFD2948CE0000888396 /* box.png */,
 				F6C755272C5A6C29006EFCDF /* cc.png */,

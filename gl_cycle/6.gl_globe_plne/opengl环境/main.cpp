@@ -234,10 +234,10 @@ int main() {
            glDrawElements(GL_TRIANGLES, numSegments * numLatitudes * 6, GL_UNSIGNED_INT, 0);
             
             
-             // 绘制每一条纬线
-            for (int i = 0; i < numLatitudes; ++i) {
-                glDrawArrays(GL_LINE_LOOP, i * numSegments, numSegments);
-            }
+//             // 绘制每一条纬线
+//            for (int i = 0; i < numLatitudes; ++i) {
+//                glDrawArrays(GL_LINE_LOOP, i * numSegments, numSegments);
+//            }
             
             
         }

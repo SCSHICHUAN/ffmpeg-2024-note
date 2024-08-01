@@ -115,7 +115,6 @@ int when_frame_push(AVFrame *frame, int flag,void *opaque){
 //    scplayer(when_frame_push,"http://playertest.longtailvideo.com/adaptive/bipbop/gear4/prog_index.m3u8");
 //    scplayer(when_frame_push,"https://sdk-release.qnsdk.com/flv.flv");
 
-//    scplayer(when_frame_push,filePathCStr);
     
     
 }

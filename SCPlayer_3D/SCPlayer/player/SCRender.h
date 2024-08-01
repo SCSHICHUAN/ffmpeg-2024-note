@@ -13,7 +13,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface SCRender : UIView
 
 
-- (void)displayWithFrame:(AVFrame *)yuvFrame bb:(void (^)(BOOL success))completionBlock;
+- (void)displayWithFrame:(AVFrame *)yuvFrame;
 @property(nonatomic,assign)float testD;
 @property(nonatomic,assign)float forward;
 @property(nonatomic,assign)float back;
@@ -24,4 +24,3 @@ NS_ASSUME_NONNULL_BEGIN
 @end
 
 NS_ASSUME_NONNULL_END
-

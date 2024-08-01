@@ -74,12 +74,7 @@ int when_frame_push(AVFrame *frame, int flag,void *opaque){
             [c_self initAudio:opaque];
         });
     }else if(flag == 1){
-        [c_self->render displayWithFrame:frame bb:^(BOOL success) {
-            if(success){
-                VideoState *is = (VideoState*)opaque;
-                fream_queue_pop(&is->pictq);
-            }
-        }];
+        [c_self->render displayWithFrame:frame];
     }
     
     //    printf("fram.size = %d,flat = %d \n",frame->pkt_size,flag);
@@ -108,12 +103,9 @@ int when_frame_push(AVFrame *frame, int flag,void *opaque){
     //    dispatch_async(dispatch_get_global_queue(0, 0), ^{
     //        [self run];
     //    });
-
-    // 获取视频文件路径
-    NSString *filePath = [[NSBundle mainBundle] pathForResource:@"sch" ofType:@"mp4"];
-    const char *filePathCStr = [filePath cStringUsingEncoding:NSUTF8StringEncoding];
-    scplayer(when_frame_push,filePathCStr);
-    
+    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+        scplayer(when_frame_push);
+    });
     
 }
 - (void)viewDidLoad {
