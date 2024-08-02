@@ -333,7 +333,7 @@ typedef struct{
     
     // 绑定Y平面
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);//绑定位置 0
     glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, textureWidth, textureHeight, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, frame->data[0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -344,7 +344,7 @@ typedef struct{
     
     //绑定U平面
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, 1);
+    glBindTexture(GL_TEXTURE_2D, 1);//绑定位置 1
     glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, halfWidth, halfHeight, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, frame->data[1]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -354,7 +354,7 @@ typedef struct{
     
     // 绑定V平面
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, 2);
+    glBindTexture(GL_TEXTURE_2D, 2);//绑定位置 2
     glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, halfWidth, halfHeight, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, frame->data[2]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

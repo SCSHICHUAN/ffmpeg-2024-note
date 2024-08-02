@@ -1,9 +1,9 @@
 
 precision mediump float;
 
-uniform sampler2D planY;
-uniform sampler2D planU;
-uniform sampler2D planV;
+uniform sampler2D planY; //位置1
+uniform sampler2D planU; //位置2
+uniform sampler2D planV; //位置3
 varying vec2 myTextureCoordsOut;
 
 void main()
