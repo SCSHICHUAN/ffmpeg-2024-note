@@ -21,7 +21,7 @@
 #import "JpegUtil.h"
 
 // camera
-Camera camera(glm::vec3(0.0f, 0.0f, 2.5f));
+Camera camera(glm::vec3(0.0f, 0.0f, 1.0f));
 
 @interface SCRender ()
 {

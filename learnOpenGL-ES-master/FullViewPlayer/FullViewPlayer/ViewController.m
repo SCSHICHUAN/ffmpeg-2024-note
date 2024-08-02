@@ -394,7 +394,7 @@ typedef struct{
         }
         glDeleteProgram(_program);
         _program = 0;
-        return;
+//        return;
     }
     
     glUseProgram(_program);
