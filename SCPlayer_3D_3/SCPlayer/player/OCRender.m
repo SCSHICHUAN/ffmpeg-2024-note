@@ -268,29 +268,26 @@ typedef struct{
 - (void)displayWithFrame:(AVFrame *)yuvFrame bb:(void (^)(BOOL success))completionBlock {
     
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self setupPerspective];
-        
-        self->_modelViewMat = GLKMatrix4RotateX(GLKMatrix4Identity, GLKMathDegreesToRadians(self.degreeY));
-        self->_modelViewMat = GLKMatrix4RotateY(self->_modelViewMat, GLKMathDegreesToRadians(self.degreeX));
-        
-        glUniformMatrix4fv(self->_myModelViewSlot, 1, GL_FALSE, (GLfloat *)&self->_modelViewMat.m);
-        
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        
-        glViewport(0, 0, self.frame.size.width, self.frame.size.height);
-        
+       
         [self setupVideoTexture:yuvFrame];
-        
-        glDrawElements(GL_TRIANGLE_STRIP, (kDivisionNum + 1) * (kDivisionNum + 1), GL_UNSIGNED_INT, 0);
-        //    glDrawArrays(GL_LINE_LOOP, 0, (kDivisionNum + 1) * (kDivisionNum / 2 + 1));
-        
-        [self->_context presentRenderbuffer:GL_RENDERBUFFER];
-        
         if(completionBlock){
             completionBlock(YES);
         }
+        
+        [self setupPerspective];
+        self->_modelViewMat = GLKMatrix4RotateX(GLKMatrix4Identity, GLKMathDegreesToRadians(self.degreeY));
+        self->_modelViewMat = GLKMatrix4RotateY(self->_modelViewMat, GLKMathDegreesToRadians(self.degreeX));
+        glUniformMatrix4fv(self->_myModelViewSlot, 1, GL_FALSE, (GLfloat *)&self->_modelViewMat.m);
+        glViewport(0, 0, self.frame.size.width, self.frame.size.height);
+
+        glDrawElements(GL_TRIANGLE_STRIP, (kDivisionNum + 1) * (kDivisionNum + 1), GL_UNSIGNED_INT, 0);
+        //    glDrawArrays(GL_LINE_LOOP, 0, (kDivisionNum + 1) * (kDivisionNum / 2 + 1));
+        [self->_context presentRenderbuffer:GL_RENDERBUFFER];
     });
     
+   
+   
    
 }
 
@@ -362,9 +359,6 @@ typedef struct{
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     
     //设置uniforms并执行渲染
-    glUniform1i(_textureY, 0); // 绑定Y平面纹理到纹理单元0
-    glUniform1i(_textureU, 1); // 绑定U平面纹理到纹理单元1
-    glUniform1i(_textureV, 2); // 绑定V平面纹理到纹理单元2
 }
 
 

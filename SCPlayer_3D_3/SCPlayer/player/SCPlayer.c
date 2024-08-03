@@ -589,6 +589,7 @@ int video_decode_thread(void *arg){
              //视频帧持续的时间
              duration = (frame_rate.num && frame_rate.den ?
                          av_q2d((AVRational){frame_rate.den,frame_rate.num}) : 0);
+             is->frame_duration = duration;
              //视频帧的呈现的时间，这里是以秒为单位的时间
              pts = (video_frame->pts == AV_NOPTS_VALUE) ? NAN : video_frame->pts * av_q2d(tb);
              pts = synchronize_video(is,video_frame,pts);//计算video clock 视频的播放时长，当前的video_clock + 1/tbr(帧率)
@@ -1161,10 +1162,14 @@ static void video_display(VideoState *is){
 }
 
 //刷新视频帧
+double front_PTS = 0.0;
+double current_PTS = 0.0;
 void video_refresh_timer(void *userdata){
 
     VideoState *is = (VideoState*)userdata;
     Frame *vp = NULL;
+    
+   
 
     double actual_delay,delay,sync_threshold,ref_clock,diff;
 
@@ -1182,6 +1187,10 @@ void video_refresh_timer(void *userdata){
             */
 
             vp = frame_queue_peek(&is->pictq);//队列中取到要渲染的frame 生产 > 消费，一般都可以读取到帧
+            current_PTS = vp->pts;
+            
+            printf("PTS = %f \n",vp->pts);
+            
             is->video_current_pts = vp->pts;//对is的域赋值，当前video的pts
             is->video_current_pts_time = av_gettime();//当前视频帧显示时间
 
@@ -1241,9 +1250,18 @@ void video_refresh_timer(void *userdata){
             //查看这一帧是不是要显示，对比推算的时间和当前时间，如果推算的时间等于当前时间，立刻马上显示
             actual_delay = is->frame_timer - (av_gettime()/ch_µs_to_s);
             if(actual_delay < 0.010){
-                actual_delay = 0.010;
+                
+//                if(current_PTS == front_PTS){//pts 是累加的不回相等，相等出错了
+//                    actual_delay = is->frame_duration;//视频帧持续的时间
+//                }else{
+                    actual_delay = 0.010;
+//                }
             }
+            
+            front_PTS = current_PTS;
 
+            
+            
             //到下个时间点刷新
             schedule_refresh(is,(int)(actual_delay * 1000 + 0.5));
             printf("schedule_refresh_time= %dms\n",(int)(actual_delay * 1000 + 0.5));
@@ -1255,7 +1273,12 @@ void video_refresh_timer(void *userdata){
 //           schedule_refresh(is,40);
             is->delay_video_time = (int)(actual_delay * 1000 + 0.5);
             printf("actual_delay:%f\n",actual_delay);
-           video_display(is);
+           
+            if(actual_delay == 0.010){
+                fream_queue_pop(&is->pictq);//时间太短不渲染
+            }else{
+                video_display(is);
+            }
         }
     } else {
         schedule_refresh(is,100);//等待打开视频流

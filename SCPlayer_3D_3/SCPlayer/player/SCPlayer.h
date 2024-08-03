@@ -177,6 +177,7 @@ typedef struct VideoState{
     FrameQueue      pictq;      //储存解码后的视频帧
     int width, height, xleft, ytop;//视频在SDL窗口位置和大小
     uint32_t   delay_video_time;
+    double         frame_duration;//视频帧持续时间
   
     //线程和退出
     SDL_Thread      *read_tid;  //读取数据线程

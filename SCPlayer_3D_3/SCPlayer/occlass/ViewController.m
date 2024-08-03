@@ -72,7 +72,7 @@ bool right_R_B;
 
 int when_frame_push(AVFrame *frame, int flag,void *opaque){
     if(flag == 0){
-        dispatch_async(dispatch_get_main_queue(), ^{
+         dispatch_async(dispatch_get_main_queue(), ^{
             [c_self initAudio:opaque];
         });
     }else if(flag == 1){
